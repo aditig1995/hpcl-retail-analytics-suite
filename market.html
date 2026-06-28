@@ -297,8 +297,8 @@ footer{text-align:center;padding:18px;color:var(--text-muted);font-size:12px;}
 <div id="loadingOverlay" role="status" aria-live="polite" aria-label="Dashboard loading">
   <div class="loading-card">
     <div class="loading-spinner"></div>
-    <div class="loading-title">Uploading Data…</div>
-    <div class="loading-subtitle">Please wait while the dashboard processes your Excel file.</div>
+    <div class="loading-title" id="loadingTitle">Loading Data…</div>
+    <div class="loading-subtitle" id="loadingSubtitle">Please wait while the dashboard processes your data.</div>
     <div class="loading-status-wrap">
       <div class="loading-status-dot"></div>
       <div class="loading-status-text" id="loadingStatusText">Reading Excel…</div>
@@ -675,10 +675,14 @@ let firstLoad = true;
 // ============================================================
 // LOADING OVERLAY — showLoading / updateLoading / hideLoading
 // ============================================================
-function showLoading(status){
+function showLoading(status, title, subtitle){
   const overlay = document.getElementById('loadingOverlay');
   const statusEl = document.getElementById('loadingStatusText');
   const fill = document.getElementById('loadingProgressFill');
+  const titleEl = document.getElementById('loadingTitle');
+  const subEl = document.getElementById('loadingSubtitle');
+  if(titleEl) titleEl.textContent = title || 'Loading Data…';
+  if(subEl) subEl.textContent = subtitle || 'Please wait while the dashboard processes your data.';
   if(statusEl) statusEl.textContent = status || 'Reading Excel…';
   if(fill) fill.style.width = '8%';
   overlay.classList.add('active');
@@ -887,17 +891,25 @@ function setDataSourceStatus(mode){
 
 // Auto-load the default dataset on page open (relative path, works on GitHub Pages).
 function loadDefaultData(){
+  showLoading('Loading Default Data…', 'Loading Data…', 'Please wait while the dashboard loads the default dataset.');
   fetch(DEFAULT_DATA_PATH)
     .then(resp=>{
       if(!resp.ok) throw new Error('not found');
       return resp.arrayBuffer();
     })
     .then(buf=>{
-      parseWorkbookArrayBuffer(buf);
-      document.getElementById('fileNameTag').innerText = 'default_data.xlsx';
-      setDataSourceStatus('default');
+      updateLoading('Processing Data…', 28);
+      requestAnimationFrame(()=>{
+        requestAnimationFrame(()=>{
+          parseWorkbookArrayBuffer(buf);
+          document.getElementById('fileNameTag').innerText = 'default_data.xlsx';
+          setDataSourceStatus('default');
+          // hideLoading() is called at the end of refresh() inside parseWorkbookArrayBuffer
+        });
+      });
     })
     .catch(()=>{
+      hideLoading();
       setDataSourceStatus('missing');
     });
 }
@@ -914,7 +926,7 @@ function downloadDefaultData(){
 document.getElementById('file').addEventListener('change', e=>{
   if(!e.target.files[0]) return;
   document.getElementById('fileNameTag').innerText = e.target.files[0].name;
-  showLoading('Reading Excel…');
+  showLoading('Reading Excel…', 'Uploading Data…', 'Please wait while the dashboard processes your Excel file.');
   const r = new FileReader();
   r.onload = (ev)=>{
     updateLoading('Processing Data…', 28);
