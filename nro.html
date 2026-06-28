@@ -1,0 +1,3092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HPCL NRO Location Intelligence & Site Recommendation Dashboard v6</title>
+<!-- Leaflet CSS — injected by the loader below via all three CDN fallbacks -->
+<!-- XLSX — deferred; always loads after the synchronous Leaflet loader below -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+<!--
+  Leaflet multi-CDN loader
+  Tries three CDNs in order: cdnjs → jsdelivr → unpkg
+  cdnjs is first because it is the most reliable in restricted/corporate networks.
+  Each attempt is synchronous (document.write) so L is defined before any
+  deferred or inline script that calls L.map().
+-->
+<script>
+(function () {
+  var LEAFLET_VERSION = '1.9.4';
+  var cdns = [
+    {
+      css: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/' + LEAFLET_VERSION + '/leaflet.min.css',
+      js:  'https://cdnjs.cloudflare.com/ajax/libs/leaflet/' + LEAFLET_VERSION + '/leaflet.min.js'
+    },
+    {
+      css: 'https://cdn.jsdelivr.net/npm/leaflet@' + LEAFLET_VERSION + '/dist/leaflet.min.css',
+      js:  'https://cdn.jsdelivr.net/npm/leaflet@' + LEAFLET_VERSION + '/dist/leaflet.min.js'
+    },
+    {
+      css: 'https://unpkg.com/leaflet@' + LEAFLET_VERSION + '/dist/leaflet.css',
+      js:  'https://unpkg.com/leaflet@' + LEAFLET_VERSION + '/dist/leaflet.js'
+    }
+  ];
+
+  function injectCSS(href) {
+    var link = document.createElement('link');
+    link.rel = 'stylesheet'; link.href = href;
+    document.head.appendChild(link);
+  }
+
+  function loadJS(src, onSuccess, onFail) {
+    var s = document.createElement('script');
+    s.src = src;
+    s.onload  = onSuccess;
+    s.onerror = onFail;
+    document.head.appendChild(s);
+  }
+
+  function tryNext(i) {
+    if (i >= cdns.length) {
+      // All CDNs failed — diagnostic will be emitted by the window.load guard
+      console.error('Leaflet loaded: undefined — all CDNs failed:', cdns.map(function(c){return c.js;}).join(', '));
+      return;
+    }
+    var cdn = cdns[i];
+    loadJS(
+      cdn.js,
+      function () {                          // success
+        injectCSS(cdn.css);
+        console.log('Leaflet loaded: object — via ' + cdn.js);
+      },
+      function () {                          // failure → try next
+        console.warn('Leaflet CDN failed (' + cdn.js + '), trying next...');
+        tryNext(i + 1);
+      }
+    );
+  }
+
+  tryNext(0);
+})();
+</script>
+<style>
+:root{
+  --hpcl-blue:#003DA5;
+  --hpcl-blue-dark:#002a73;
+  --hpcl-blue-mid:#1a56c4;
+  --hpcl-orange:#FF6B00;
+  --hpcl-yellow:#FFD100;
+  --bg:#eef2f8;
+  --card-bg:#ffffff;
+  --text-dark:#1b2430;
+  --text-muted:#6b7686;
+  --border:#e3e8f0;
+  --green:#1e9e5a;
+  --green-light:#e8f7ef;
+  --red:#e23b3b;
+  --red-light:#fdeaea;
+  --amber:#f39c12;
+  --amber-light:#fef7e8;
+  --purple:#7B61FF;
+  --purple-light:#f0eeff;
+  --radius:14px;
+  --shadow:0 2px 10px rgba(15,40,90,.06);
+  --shadow-hover:0 8px 24px rgba(15,40,90,.13);
+  --ioc-color:#FF8C00;
+  --bpcl-color:#16a34a;
+  --other-color:#9333ea;
+  --ws-color:#ef4444;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,sans-serif;
+  background:var(--bg);
+  color:var(--text-dark);
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+
+/* ===== HEADER ===== */
+.header{
+  background:linear-gradient(118deg,var(--hpcl-blue) 0%,var(--hpcl-blue-dark) 100%);
+  color:#fff;
+  padding:20px 26px 16px;
+  box-shadow:0 4px 20px rgba(0,61,165,.28);
+  position:relative;
+  overflow:hidden;
+}
+.header::before{
+  content:"";
+  position:absolute;right:-80px;top:-80px;
+  width:260px;height:260px;
+  background:var(--hpcl-orange);
+  opacity:.1;border-radius:50%;
+}
+.header::after{
+  content:"";
+  position:absolute;left:40%;bottom:-40px;
+  width:160px;height:160px;
+  background:var(--hpcl-yellow);
+  opacity:.07;border-radius:50%;
+}
+.header-inner{
+  display:flex;align-items:center;
+  justify-content:space-between;
+  gap:16px;flex-wrap:wrap;
+  position:relative;z-index:1;
+}
+.header-left{display:flex;align-items:center;gap:14px;}
+.logo-box{
+  width:66px;height:66px;
+  background:#fff;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  padding:6px;flex-shrink:0;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);
+}
+.logo-img{width:100%;height:100%;object-fit:contain;display:block;}
+.header-text h1{font-size:20px;font-weight:800;letter-spacing:.2px;line-height:1.2;}
+.header-text .sub{font-size:12px;color:#c8d8ff;margin-top:4px;font-weight:400;opacity:.9;}
+.header-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
+.header-badge{
+  background:rgba(255,255,255,.13);
+  border:1px solid rgba(255,255,255,.2);
+  padding:5px 14px;border-radius:20px;
+  font-size:12px;font-weight:700;letter-spacing:.4px;
+}
+.header-tagline{font-size:11px;color:#b8d0ff;text-align:right;}
+.nav-tabs{
+  display:flex;gap:0;
+  background:rgba(0,0,0,.18);
+  border-radius:8px;overflow:hidden;
+  position:relative;z-index:1;
+  margin-top:14px;
+}
+.nav-tab{
+  padding:8px 18px;
+  font-size:12px;font-weight:700;
+  color:rgba(255,255,255,.65);
+  cursor:pointer;letter-spacing:.3px;
+  transition:.15s;
+  border:none;background:none;
+  text-transform:uppercase;
+}
+.nav-tab:hover{color:#fff;background:rgba(255,255,255,.08);}
+.nav-tab.active{
+  background:var(--hpcl-orange);
+  color:#fff;
+}
+
+/* ===== UPLOAD BAR ===== */
+.upload-bar{
+  background:var(--card-bg);
+  margin:14px;
+  padding:14px 18px;
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  display:flex;align-items:center;
+  gap:14px;flex-wrap:wrap;
+}
+.upload-bar label.lbl{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:3px;}
+.upload-btn{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:9px 18px;
+  background:var(--hpcl-blue);color:#fff;
+  border-radius:8px;font-size:13px;font-weight:700;
+  cursor:pointer;transition:.15s;
+  box-shadow:0 2px 8px rgba(0,61,165,.2);
+}
+.upload-btn:hover{background:var(--hpcl-blue-dark);}
+#fileInput{display:none;}
+.radius-group{display:flex;align-items:center;gap:8px;}
+.radius-group input[type=range]{
+  -webkit-appearance:none;appearance:none;
+  width:120px;height:6px;
+  border-radius:3px;
+  background:linear-gradient(90deg,var(--hpcl-blue) 0%,#c5d5f5 0%);
+  outline:none;cursor:pointer;
+}
+.radius-group input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  width:16px;height:16px;border-radius:50%;
+  background:var(--hpcl-blue);
+  border:2px solid #fff;
+  box-shadow:0 1px 4px rgba(0,0,0,.2);
+}
+#radiusVal{
+  font-size:13px;font-weight:700;
+  color:var(--hpcl-blue);min-width:42px;
+}
+.btn-analyze{
+  padding:9px 24px;
+  background:var(--hpcl-orange);color:#fff;
+  border:none;border-radius:8px;
+  font-size:13px;font-weight:800;
+  cursor:pointer;transition:.15s;
+  box-shadow:0 2px 10px rgba(255,107,0,.3);
+  letter-spacing:.3px;
+}
+.btn-analyze:hover{background:#e55d00;transform:translateY(-1px);}
+.file-name{font-size:11px;color:var(--text-muted);margin-top:2px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.filter-select{
+  padding:8px 10px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  font-size:13px;
+  background:#fbfcfe;
+  color:var(--text-dark);
+  min-width:140px;
+}
+
+/* ===== DROPDOWN Z-INDEX FIX ===== */
+/* Ensure panel headers (ph) that contain dropdowns create a stacking context above cards/tables */
+.ph {
+  position:relative;
+  z-index:100;
+}
+/* Ensure select dropdowns in panel headers open above the content below */
+.ph select {
+  position:relative;
+  z-index:200;
+}
+/* Upload bar dropdowns must also sit above everything */
+.upload-bar {
+  position:relative;
+  z-index:50;
+}
+.upload-bar select {
+  position:relative;
+  z-index:200;
+}
+/* Table wrapper must NOT create a new stacking context that traps dropdown */
+.tbl-wrap {
+  position:relative;
+  z-index:1;
+}
+/* Panel overflow must not clip dropdown lists */
+.panel {
+  overflow:visible;
+}
+.panel-body {
+  position:relative;
+  z-index:1;
+}
+
+/* ===== SECTION LABEL ===== */
+.sec-label{
+  margin:20px 14px 8px;
+  font-size:12px;font-weight:800;
+  color:var(--hpcl-blue);
+  text-transform:uppercase;
+  letter-spacing:1px;
+  display:flex;align-items:center;gap:8px;
+}
+.sec-label::before{
+  content:"";width:4px;height:16px;
+  background:var(--hpcl-orange);
+  border-radius:2px;display:inline-block;
+}
+
+/* ===== KPI GRID ===== */
+.kpi-grid{
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:12px;margin:0 14px;
+}
+.kpi{
+  background:var(--card-bg);
+  border-radius:var(--radius);
+  padding:16px 16px 14px;
+  box-shadow:var(--shadow);
+  border-top:4px solid var(--hpcl-orange);
+  position:relative;
+  transition:.18s;
+}
+.kpi:hover{box-shadow:var(--shadow-hover);transform:translateY(-2px);}
+.kpi .k-label{font-size:10.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;}
+.kpi .k-val{font-size:24px;font-weight:800;color:var(--hpcl-blue);margin-top:5px;line-height:1;}
+.kpi .k-sub{font-size:10.5px;color:var(--text-muted);margin-top:4px;}
+.kpi .k-icon{
+  position:absolute;top:12px;right:12px;
+  font-size:18px;opacity:.18;
+}
+.kpi.blue{border-top-color:var(--hpcl-blue);} .kpi.blue .k-val{color:var(--hpcl-blue);}
+.kpi.orange{border-top-color:var(--hpcl-orange);} .kpi.orange .k-val{color:var(--hpcl-orange);}
+.kpi.red{border-top-color:var(--red);} .kpi.red .k-val{color:var(--red);}
+.kpi.green{border-top-color:var(--green);} .kpi.green .k-val{color:var(--green);}
+.kpi.purple{border-top-color:var(--purple);} .kpi.purple .k-val{color:var(--purple);}
+.kpi.amber{border-top-color:var(--amber);} .kpi.amber .k-val{color:var(--amber);}
+
+/* ===== PANEL ===== */
+.panel{
+  background:var(--card-bg);
+  margin:12px 14px;
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  overflow:hidden;
+}
+.ph{
+  background:linear-gradient(90deg,var(--hpcl-blue),var(--hpcl-blue-dark));
+  color:#fff;
+  padding:12px 16px;
+  font-size:14px;font-weight:700;
+  display:flex;align-items:center;justify-content:space-between;
+  gap:10px;flex-wrap:wrap;
+}
+.ph .ph-sub{font-size:11px;font-weight:400;opacity:.75;}
+.ph-btns{display:flex;gap:8px;}
+.ph-btn{
+  padding:5px 12px;
+  background:rgba(255,255,255,.15);
+  border:1px solid rgba(255,255,255,.25);
+  border-radius:6px;color:#fff;
+  font-size:11px;font-weight:600;
+  cursor:pointer;transition:.12s;
+}
+.ph-btn:hover{background:rgba(255,255,255,.25);}
+.ph-btn.active{background:var(--hpcl-orange);border-color:transparent;}
+.panel-body{padding:16px;}
+
+/* ===== MAP ===== */
+#mapWrap{position:relative;}
+#map{height:520px;border-radius:0 0 var(--radius) var(--radius);}
+.map-legend{
+  position:absolute;bottom:14px;left:14px;
+  background:rgba(255,255,255,.96);
+  border-radius:10px;padding:10px 14px;
+  box-shadow:0 2px 12px rgba(0,0,0,.14);
+  font-size:11.5px;z-index:1000;
+  border:1px solid var(--border);
+  min-width:170px;
+}
+.map-legend .leg-title{font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--hpcl-blue);margin-bottom:8px;}
+.leg-row{display:flex;align-items:center;gap:7px;margin-bottom:5px;}
+.leg-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;border:1.5px solid rgba(0,0,0,.2);}
+.leg-sq{width:12px;height:12px;border-radius:3px;flex-shrink:0;opacity:.7;}
+.map-controls{
+  position:absolute;top:10px;right:10px;
+  display:flex;flex-direction:column;gap:6px;
+  z-index:1000;
+}
+.mc-btn{
+  padding:7px 12px;
+  background:rgba(255,255,255,.95);
+  border:1px solid var(--border);
+  border-radius:8px;
+  font-size:11px;font-weight:700;
+  cursor:pointer;transition:.12s;
+  color:var(--text-dark);
+  box-shadow:0 1px 6px rgba(0,0,0,.1);
+}
+.mc-btn:hover{background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.15);}
+.mc-btn.active{background:var(--hpcl-blue);color:#fff;border-color:transparent;}
+
+/* ===== TWO COL LAYOUT ===== */
+.two-col{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:0 12px;
+  margin:12px 14px;
+}
+.two-col .panel{margin:0;}
+
+/* ===== TABLE ===== */
+.tbl-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--border);}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+thead th{
+  background:linear-gradient(90deg,#f0f4fc,#e8eef9);
+  color:var(--hpcl-blue);
+  font-weight:700;font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.5px;
+  padding:10px 12px;
+  text-align:left;white-space:nowrap;
+  border-bottom:2px solid var(--border);
+  position:sticky;top:0;
+}
+tbody tr{border-bottom:1px solid var(--border);transition:.1s;}
+tbody tr:hover{background:#f4f7fd;}
+tbody tr:last-child{border-bottom:none;}
+tbody td{padding:9px 12px;vertical-align:middle;}
+.rank-badge{
+  width:24px;height:24px;
+  border-radius:50%;
+  background:var(--hpcl-blue);
+  color:#fff;font-size:11px;font-weight:800;
+  display:inline-flex;align-items:center;justify-content:center;
+}
+.rank-badge.gold{background:linear-gradient(135deg,#f59e0b,#d97706);}
+.rank-badge.silver{background:linear-gradient(135deg,#94a3b8,#64748b);}
+.rank-badge.bronze{background:linear-gradient(135deg,#cd7c3a,#a0522d);}
+.score-bar-wrap{
+  display:flex;align-items:center;gap:7px;min-width:110px;
+}
+.score-bar{
+  height:8px;border-radius:4px;
+  background:linear-gradient(90deg,var(--hpcl-blue),var(--hpcl-orange));
+  flex-shrink:0;
+  transition:width .3s ease;
+}
+.score-num{font-size:12px;font-weight:800;color:var(--hpcl-blue);}
+.badge{
+  display:inline-flex;align-items:center;
+  padding:3px 9px;border-radius:20px;
+  font-size:10.5px;font-weight:700;white-space:nowrap;
+}
+.badge-green{background:var(--green-light);color:var(--green);}
+.badge-red{background:var(--red-light);color:var(--red);}
+.badge-amber{background:var(--amber-light);color:#b8730a;}
+.badge-blue{background:#e8eeff;color:var(--hpcl-blue);}
+.badge-purple{background:var(--purple-light);color:var(--purple);}
+.badge-orange{background:#fff1e6;color:var(--hpcl-orange);}
+
+/* ===== CHARTS / BARS ===== */
+.mini-chart{padding:12px 0;}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.bar-label{font-size:12px;width:130px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-dark);}
+.bar-track{flex:1;height:10px;background:#f0f3f9;border-radius:5px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:5px;transition:width .4s ease;}
+.bar-val{font-size:11px;font-weight:700;width:50px;text-align:right;color:var(--text-muted);}
+
+/* ===== EMPTY STATE ===== */
+.empty{
+  text-align:center;padding:60px 20px;
+  color:var(--text-muted);
+}
+.empty .empty-icon{font-size:48px;opacity:.3;margin-bottom:12px;}
+.empty h3{font-size:16px;font-weight:700;color:var(--text-dark);margin-bottom:6px;}
+.empty p{font-size:13px;line-height:1.6;}
+
+/* ===== WHITESPACE CARD ===== */
+.ws-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
+  gap:12px;
+  padding:16px;
+}
+.ws-card{
+  border:1.5px solid var(--border);
+  border-radius:10px;padding:14px;
+  transition:.15s;cursor:pointer;
+  position:relative;overflow:hidden;
+}
+.ws-card:hover{border-color:var(--hpcl-orange);box-shadow:0 4px 16px rgba(255,107,0,.1);}
+.ws-card::before{
+  content:"";position:absolute;top:0;left:0;right:0;height:3px;
+}
+.ws-card.high::before{background:var(--red);}
+.ws-card.medium::before{background:var(--amber);}
+.ws-card.low::before{background:var(--green);}
+.ws-card .wc-lat{font-size:11px;color:var(--text-muted);font-family:monospace;margin-bottom:4px;}
+.ws-card .wc-score{font-size:22px;font-weight:800;color:var(--hpcl-blue);}
+.ws-card .wc-score span{font-size:12px;font-weight:400;color:var(--text-muted);}
+.ws-card .wc-meta{font-size:11.5px;color:var(--text-muted);margin-top:6px;line-height:1.6;}
+.ws-card .wc-action{
+  margin-top:10px;
+  font-size:11px;font-weight:700;
+  color:var(--hpcl-blue);
+  text-transform:uppercase;letter-spacing:.4px;
+}
+
+/* ===== TABS (section) ===== */
+.page-section{display:none;}
+.page-section.active{display:block;}
+
+/* ===== LOADING ===== */
+#loadingOverlay{
+  display:none;position:fixed;
+  inset:0;background:rgba(0,30,80,.55);
+  z-index:9999;align-items:center;justify-content:center;
+  flex-direction:column;gap:14px;color:#fff;
+  font-size:15px;font-weight:600;
+}
+#loadingOverlay.show{display:flex;}
+.spinner{
+  width:44px;height:44px;
+  border:4px solid rgba(255,255,255,.2);
+  border-top-color:var(--hpcl-orange);
+  border-radius:50%;
+  animation:spin .7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ===== SCROLL ===== */
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:#f0f3f9;}
+::-webkit-scrollbar-thumb{background:#c0ccdd;border-radius:3px;}
+
+/* ===== INFO BOXES ===== */
+.info-box{
+  border-radius:10px;padding:12px 16px;
+  font-size:12.5px;line-height:1.6;
+  margin-bottom:12px;
+}
+.info-box.info{background:#e8eeff;border-left:4px solid var(--hpcl-blue);color:#1a3066;}
+.info-box.warn{background:var(--amber-light);border-left:4px solid var(--amber);color:#7a5a0a;}
+.info-box.success{background:var(--green-light);border-left:4px solid var(--green);color:#155234;}
+
+/* ===== FORMULA BOX ===== */
+.formula-box{
+  background:#f8f9ff;
+  border:1px solid #d0d9f5;
+  border-radius:10px;
+  padding:14px 16px;
+  font-size:12px;
+  margin:12px 0;
+}
+.formula-box .f-title{font-weight:800;color:var(--hpcl-blue);margin-bottom:8px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;}
+.formula-comp{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;}
+.f-comp{
+  padding:5px 12px;
+  border-radius:20px;
+  font-size:11.5px;font-weight:700;
+  background:var(--card-bg);
+  border:1.5px solid var(--border);
+}
+
+/* ===== DETAIL PANEL ===== */
+.detail-panel{
+  position:fixed;right:0;top:0;bottom:0;width:360px;
+  background:#fff;z-index:5000;
+  box-shadow:-4px 0 24px rgba(0,0,0,.15);
+  transform:translateX(100%);
+  transition:.25s cubic-bezier(.4,0,.2,1);
+  overflow-y:auto;
+}
+.detail-panel.open{transform:translateX(0);}
+.dp-header{
+  background:linear-gradient(90deg,var(--hpcl-blue),var(--hpcl-blue-dark));
+  color:#fff;padding:18px 16px 14px;
+}
+.dp-header h3{font-size:15px;font-weight:800;margin-bottom:4px;}
+.dp-header .dp-coord{font-size:11px;opacity:.75;font-family:monospace;}
+.dp-close{
+  float:right;background:rgba(255,255,255,.15);
+  border:none;color:#fff;border-radius:6px;
+  padding:4px 10px;cursor:pointer;font-size:13px;font-weight:700;
+}
+.dp-close:hover{background:rgba(255,255,255,.25);}
+.dp-body{padding:16px;}
+.dp-metric{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:9px 0;border-bottom:1px solid var(--border);
+  font-size:12.5px;
+}
+.dp-metric:last-child{border-bottom:none;}
+.dp-metric .dm-label{color:var(--text-muted);font-weight:600;}
+.dp-metric .dm-val{font-weight:800;color:var(--text-dark);}
+.dp-score-ring{
+  width:90px;height:90px;margin:16px auto;
+  position:relative;display:flex;align-items:center;justify-content:center;
+}
+.dp-score-ring svg{position:absolute;inset:0;}
+.dp-score-num{font-size:24px;font-weight:900;color:var(--hpcl-blue);}
+.dp-action-btn{
+  display:block;width:100%;
+  margin-top:12px;padding:10px;
+  background:var(--hpcl-orange);color:#fff;
+  border:none;border-radius:8px;
+  font-size:13px;font-weight:700;
+  cursor:pointer;text-align:center;
+}
+
+/* ===== RESPONSIVE ===== */
+@media(max-width:900px){
+  .kpi-grid{grid-template-columns:repeat(3,1fr);}
+  .two-col{grid-template-columns:1fr;}
+}
+@media(max-width:600px){
+  .kpi-grid{grid-template-columns:repeat(2,1fr);}
+  .header-right{display:none;}
+}
+</style>
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div id="loadingMsg">Processing outlet data...</div>
+</div>
+
+<!-- Detail Side Panel -->
+<div class="detail-panel" id="detailPanel">
+  <div class="dp-header">
+    <button class="dp-close" onclick="closeDetail()">✕ Close</button>
+    <h3 id="dp-title">NRO Site #1</h3>
+    <div class="dp-coord" id="dp-coord">0.0000, 0.0000</div>
+  </div>
+  <div class="dp-body">
+    <div class="dp-score-ring">
+      <svg viewBox="0 0 90 90" width="90" height="90">
+        <circle cx="45" cy="45" r="38" fill="none" stroke="#e8eef9" stroke-width="9"/>
+        <circle id="dp-ring" cx="45" cy="45" r="38" fill="none" stroke="var(--hpcl-orange)" stroke-width="9"
+          stroke-dasharray="238.8" stroke-dashoffset="238.8" stroke-linecap="round"
+          transform="rotate(-90 45 45)"/>
+      </svg>
+      <span class="dp-score-num" id="dp-score-num">0</span>
+    </div>
+    <div id="dp-metrics"></div>
+    <button class="dp-action-btn" onclick="closeDetail()">📌 Mark for Field Verification</button>
+    <button class="dp-action-btn" id="dp-map-btn" onclick="openDetailInMap()" style="background:var(--hpcl-blue);margin-top:8px;">📍 Open in Map</button>
+  </div>
+</div>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-inner">
+    <div class="header-left">
+      <div class="logo-box">
+        <img class="logo-img" id="header-logo-img" alt="HPCL logo">
+      </div>
+      <div class="header-text">
+        <h1>NRO Location Intelligence &amp; Site Recommendation</h1>
+        <div class="sub">Road-Only (NH/SH/MDR/DR) · Hard Exclusion Zones · Settlement Rule · District-First · Top 50–100 NRO</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="header-badge">🛣️ ROAD-BASED NRO ENGINE</div>
+      <div class="header-tagline">Road-Only Rule · Exclusion Zones · Settlement Check · District-First · Top 50–100</div>
+    </div>
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showSection('overview')">📊 Overview</button>
+    <button class="nav-tab" onclick="showSection('recommendations')">🎯 Top NRO Sites</button>
+    <button class="nav-tab" onclick="showSection('whitespace')">⬜ White-Space</button>
+    <button class="nav-tab" onclick="showSection('map')">🗺️ Location Map</button>
+    <button class="nav-tab" onclick="showSection('cannibalization')">⚡ Cannibalization</button>
+    <button class="nav-tab" onclick="showSection('methodology')">📐 Methodology</button>
+  </div>
+</div>
+
+<!-- UPLOAD BAR -->
+<div class="upload-bar">
+  <div>
+    <div class="lbl">Data Source</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <button type="button" class="upload-btn" style="border:none;" onclick="downloadDefaultData()">📥 Download Default Data</button>
+      <label class="upload-btn" for="fileInput">📂 Upload New Data</label>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" onchange="handleFile(event)">
+    </div>
+    <div class="file-name" id="fileName">No file selected</div>
+    <div class="file-name" id="dataSourceStatus">🟢 Data Source: Default Dataset</div>
+  </div>
+  <div>
+    <div class="lbl">Coverage Radius</div>
+    <div class="radius-group">
+      <input type="range" id="radiusSlider" min="1" max="20" value="5" step="0.5" oninput="updateRadius(this.value)">
+      <span id="radiusVal">5.0 km</span>
+    </div>
+  </div>
+  <div>
+    <div class="lbl">Min Market Volume</div>
+    <div class="radius-group">
+      <input type="range" id="minVolSlider" min="0" max="2000" value="250" step="50" oninput="updateMinVol(this.value)">
+      <span id="minVolVal">250 KL</span>
+    </div>
+  </div>
+  <div>
+    <div class="lbl">District Filter</div>
+    <select class="filter-select" id="districtFilter" onchange="applyFilters()">
+      <option value="">All Districts</option>
+    </select>
+  </div>
+  <div>
+    <div class="lbl">Sales Area Filter</div>
+    <select class="filter-select" id="saFilter" onchange="applyFilters()">
+      <option value="">All Sales Areas</option>
+    </select>
+  </div>
+  <button class="btn-analyze" onclick="runAnalysis()">⚡ Run Analysis</button>
+</div>
+
+<!-- ======================== SECTION: OVERVIEW ======================== -->
+<div class="page-section active" id="sec-overview">
+
+  <div class="sec-label">Executive KPIs</div>
+  <div class="kpi-grid">
+    <div class="kpi blue"><div class="k-icon">🏪</div><div class="k-label">Total HPCL Outlets</div><div class="k-val" id="kpi-hpcl">—</div><div class="k-sub">In loaded dataset</div></div>
+    <div class="kpi orange"><div class="k-icon">🔴</div><div class="k-label">Coverage Gaps</div><div class="k-val" id="kpi-gaps">—</div><div class="k-sub">Areas &gt; radius from HPCL</div></div>
+    <div class="kpi red"><div class="k-icon">⬜</div><div class="k-label">White-Space Zones</div><div class="k-val" id="kpi-ws">—</div><div class="k-sub">High opp. locations</div></div>
+    <div class="kpi green"><div class="k-icon">🎯</div><div class="k-label">Potential NRO Sites</div><div class="k-val" id="kpi-nro">—</div><div class="k-sub">Score ≥ 60</div></div>
+    <div class="kpi purple"><div class="k-icon">📏</div><div class="k-label">Avg. HPCL Spacing</div><div class="k-val" id="kpi-spacing">—</div><div class="k-sub">km between outlets</div></div>
+  </div>
+
+  <div class="sec-label">Competitor Landscape</div>
+  <div class="kpi-grid">
+    <div class="kpi orange"><div class="k-icon">🟠</div><div class="k-label">IOC Outlets</div><div class="k-val" id="kpi-ioc">—</div><div class="k-sub">Indian Oil Corp.</div></div>
+    <div class="kpi green"><div class="k-icon">🟢</div><div class="k-label">BPCL Outlets</div><div class="k-val" id="kpi-bpcl">—</div><div class="k-sub">Bharat Petroleum</div></div>
+    <div class="kpi amber"><div class="k-icon">🟡</div><div class="k-label">Other OMCs</div><div class="k-val" id="kpi-other">—</div><div class="k-sub">NRL, CPCL etc.</div></div>
+    <div class="kpi red"><div class="k-icon">📊</div><div class="k-label">Total Market Outlets</div><div class="k-val" id="kpi-total">—</div><div class="k-sub">All OMCs combined</div></div>
+    <div class="kpi blue"><div class="k-icon">📈</div><div class="k-label">Est. Capture Volume</div><div class="k-val" id="kpi-capture">—</div><div class="k-sub">KL/month potential</div></div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <div class="ph">🏆 Top 5 Opportunity Zones <span class="ph-sub">By score</span></div>
+      <div class="panel-body">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>#</th><th>Location</th><th>Score</th><th>IOC Nearby</th><th>BPCL Nearby</th><th>Status</th></tr></thead>
+            <tbody id="top5Table"><tr><td colspan="6" class="empty"><div class="empty-icon">📍</div><br>Load data to view top opportunities</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ph">📊 OMC Distribution Analysis</div>
+      <div class="panel-body">
+        <div id="omcChart"><div class="empty"><div class="empty-icon">📊</div><h3>No data loaded</h3><p>Upload your Excel file and run analysis to see OMC distribution.</p></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <div class="ph">📦 Volume by Trading Area <span class="ph-sub">HPCL outlets</span></div>
+      <div class="panel-body"><div id="taVolChart"><div class="empty"><div class="empty-icon">📦</div><h3>Awaiting data</h3></div></div></div>
+    </div>
+    <div class="panel">
+      <div class="ph">🌡️ Cannibalization Risk Summary</div>
+      <div class="panel-body"><div id="cannibalChart"><div class="empty"><div class="empty-icon">⚡</div><h3>Awaiting analysis</h3></div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== SECTION: MAP ======================== -->
+<div class="page-section" id="sec-map">
+  <div class="sec-label">Interactive Location Intelligence Map</div>
+  <div class="panel">
+    <div class="ph">
+      🗺️ Outlet Map — Coverage · Competitors · Opportunity Heatmap
+      <div class="ph-btns">
+        <button class="ph-btn active" id="btn-hpcl" onclick="toggleLayer('hpcl',this)">🔵 HPCL</button>
+        <button class="ph-btn active" id="btn-ioc" onclick="toggleLayer('ioc',this)">🟠 IOC</button>
+        <button class="ph-btn active" id="btn-bpcl" onclick="toggleLayer('bpcl',this)">🟢 BPCL</button>
+        <button class="ph-btn active" id="btn-other" onclick="toggleLayer('other',this)">🟣 Other</button>
+        <button class="ph-btn active" id="btn-nro" onclick="toggleLayer('nro',this)">🎯 NRO Sites</button>
+        <button class="ph-btn" id="btn-heat" onclick="toggleLayer('heat',this)">🌡️ Heatmap</button>
+        <button class="ph-btn" id="btn-coverage" onclick="toggleLayer('coverage',this)">⭕ Coverage</button>
+      </div>
+    </div>
+    <div id="mapWrap">
+      <div id="map"></div>
+      <div class="map-legend">
+        <div class="leg-title">Map Legend</div>
+        <div class="leg-row"><div class="leg-dot" style="background:#2563eb;"></div> HPCL Outlet</div>
+        <div class="leg-row"><div class="leg-dot" style="background:#f97316;"></div> IOC Outlet</div>
+        <div class="leg-row"><div class="leg-dot" style="background:#16a34a;"></div> BPCL Outlet</div>
+        <div class="leg-row"><div class="leg-dot" style="background:#9333ea;"></div> Other OMC</div>
+        <div class="leg-row"><div class="leg-dot" style="background:#ef4444;border:2px dashed #fff;"></div> NRO Recommended</div>
+        <div class="leg-row"><div class="leg-sq" style="background:rgba(255,107,0,.15);border:1px dashed #f97316;"></div> Coverage Gap</div>
+      </div>
+      <div class="map-controls">
+        <button class="mc-btn" onclick="fitAllMarkers()">🔍 Fit All</button>
+        <button class="mc-btn" onclick="fitHpclMarkers()">🔵 HPCL Only</button>
+        <button class="mc-btn" onclick="fitNroMarkers()">🎯 NRO Sites</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== SECTION: WHITE-SPACE ======================== -->
+<div class="page-section" id="sec-whitespace">
+  <div class="sec-label">White-Space Detection — Card View of Top NRO Recommendations</div>
+  <div class="panel">
+    <div class="ph">⬜ White-Space Opportunity Grid <span class="ph-sub" id="wsCountLabel">Showing same sites as Top NRO tab</span>
+    </div>
+    <div id="wsGrid"><div class="empty" style="padding:60px"><div class="empty-icon">⬜</div><h3>No white-space data</h3><p>Upload data and run analysis to detect white-space zones.</p></div></div>
+  </div>
+</div>
+
+<!-- ======================== SECTION: RECOMMENDATIONS ======================== -->
+<div class="page-section" id="sec-recommendations">
+  <div class="sec-label">Top Recommended NRO Locations — Grid-Based Market Capture Analysis · Statewide Coverage</div>
+
+  <!-- DIAGNOSTICS PANEL -->
+  <div class="panel" id="diagnosticsPanel" style="display:none;">
+    <div class="ph">🔬 Recommendation Engine Diagnostics <span class="ph-sub">Pipeline funnel — identify bottlenecks</span></div>
+    <div class="panel-body" style="padding:14px 16px;">
+      <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:10px;" id="diagGrid">
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="ph">
+      🎯 NRO Site Recommendation Table <span class="ph-sub">Objective: Identify new market capture opportunities</span>
+      <div class="ph-btns">
+        <select class="filter-select" id="topNSelect" onchange="renderNROTable(nroSites)" style="padding:5px 8px;font-size:11px;min-width:120px;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:6px;">
+          <option value="20">Top 20</option>
+          <option value="50" selected>Top 50</option>
+          <option value="100">Top 100</option>
+          <option value="9999">All Recommendations</option>
+        </select>
+        <button class="ph-btn" onclick="exportCSV()">⬇️ Export CSV</button>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <div class="tbl-wrap" style="max-height:600px;overflow-y:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Priority</th>
+              <th>District</th>
+              <th>Road Type</th>
+              <th>Latitude</th>
+              <th>Longitude</th>
+              <th>Opportunity Score</th>
+              <th>Feasibility Score</th>
+              <th>Cannibalization</th>
+              <th>Final Score</th>
+              <th>Road Feasibility</th>
+              <th>HPCL Share %</th>
+              <th>Market Deficit %</th>
+              <th>Capture Est. KL</th>
+              <th>Share Gain %</th>
+              <th>Nearest HPCL</th>
+              <th>HPCL Dist (km)</th>
+              <th>Nearest Any Outlet</th>
+              <th>Dist to Outlet (km)</th>
+              <th>Competitors</th>
+              <th>Highway Opp.</th>
+              <th>Recommendation Reason</th>
+            </tr>
+          </thead>
+          <tbody id="nroTable">
+            <tr><td colspan="18"><div class="empty"><div class="empty-icon">🎯</div><h3>No recommendations yet</h3><p>Load outlet data and run analysis to generate NRO site recommendations.</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:0">
+    <div class="ph">🗺️ District-Wise Recommendation Summary <span class="ph-sub">Market capture potential by district — balanced statewide allocation</span></div>
+    <div class="panel-body" style="padding:0">
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>District</th>
+              <th>Recommended Sites</th>
+              <th>Avg. Opportunity Score</th>
+              <th>Avg. HPCL Share %</th>
+              <th>Avg. Market Share Deficit %</th>
+              <th>Expected Capture Potential (KL/mo)</th>
+              <th>Best Site Rating</th>
+            </tr>
+          </thead>
+          <tbody id="districtTable">
+            <tr><td colspan="7"><div class="empty"><div class="empty-icon">🗺️</div><h3>No district data yet</h3><p>Run analysis to view the district-wise summary.</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:0">
+    <div class="ph">🏆 District Opportunity Ranking <span class="ph-sub">Which districts deserve expansion — before identifying exact locations</span></div>
+    <div class="panel-body" style="padding:0">
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>District</th>
+              <th>Opportunity Index</th>
+              <th>HPCL Share %</th>
+              <th>Competitor Share %</th>
+              <th>Market Volume (KL)</th>
+              <th>Recommended NRO Count</th>
+              <th>Capture Potential (KL/mo)</th>
+            </tr>
+          </thead>
+          <tbody id="districtRankingTable">
+            <tr><td colspan="8"><div class="empty"><div class="empty-icon">🏆</div><h3>No district ranking yet</h3><p>Run analysis to view district opportunity ranking.</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end sec-recommendations -->
+
+<!-- ======================== SECTION: CANNIBALIZATION ======================== -->
+<div class="page-section" id="sec-cannibalization">
+  <div class="sec-label">Cannibalization Analysis — NRO vs Existing HPCL Outlet Impact</div>
+
+  <div class="panel">
+    <div class="ph">⚡ Cannibalization Score Matrix <span class="ph-sub">Lower = Better (less impact on existing HPCL)</span></div>
+    <div class="panel-body">
+      <div class="info-box info">
+        <strong>Cannibalization Score Formula:</strong> <code>Nearby HPCL Volume ÷ Total Nearby Market Volume × 100</code><br>
+        A score below 20% means the proposed site draws primarily from competitor and uncaptured volume — safe to proceed.<br>
+        A score above 50% indicates significant overlap with existing HPCL outlets — proceed with caution.
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>NRO Lat</th><th>NRO Lng</th>
+              <th>Nearby HPCL Vol</th><th>Total Nearby Vol</th>
+              <th>Cannibalization Score</th><th>Nearest HPCL Outlet</th><th>Distance (km)</th><th>Risk Level</th>
+            </tr>
+          </thead>
+          <tbody id="canniTable">
+            <tr><td colspan="9"><div class="empty"><div class="empty-icon">⚡</div><h3>No data</h3><p>Run analysis to view cannibalization scores.</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== SECTION: METHODOLOGY ======================== -->
+<div class="page-section" id="sec-methodology">
+  <div class="sec-label">Scoring Methodology & Data Schema</div>
+  <div class="two-col">
+    <div class="panel">
+      <div class="ph">📐 v6 Road-Based Scoring Model</div>
+      <div class="panel-body">
+        <div class="formula-box">
+          <div class="f-title">Final Score = 40% Opportunity + 20% Cannibalization-Adj + 40% Feasibility</div>
+          <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px;">All candidates generated ONLY on motorway/trunk/primary/secondary/tertiary roads via OSM Overpass API. Unclassified, residential, service, track, path, and footway roads are hard-rejected. No coordinate offsets — candidates sit exactly on road centerlines. Hard exclusion zones, settlement rule (2 km), and final validation gate ensure zero false white-space.</div>
+          <div class="formula-comp">
+            <div class="f-comp" style="background:#fff1e6;border-color:#f8c89a;"><strong>Market Opportunity Score (0–100)</strong><br>35% HPCL Coverage Gap · 30% Market Share Deficit · 15% Competitor Volume · 10% Growth Trend · 5% Density · 5% Road Hierarchy</div>
+            <div class="f-comp" style="background:#e8eeff;border-color:#a0b4f0;"><strong>Cannibalization Score (0–100, inverted)</strong><br>0–2 km from HPCL → 80 pts penalty · 2–5 km → 50 pts · 5–8 km → 25 pts · >8 km → 0 pts</div>
+            <div class="f-comp" style="background:#e8f7ef;border-color:#9ad9be;"><strong>Feasibility Score (0–100) — minimum 50 to qualify</strong><br>Road hierarchy (0–35) + Outlet proximity (0–30) + Market activity (0–20) + Settlement proximity (0–15)</div>
+          </div>
+        </div>
+        <div class="formula-box" style="margin-top:0">
+          <div class="f-title">Road Quality Score (Allowed Roads Only)</div>
+          <div style="font-size:11.5px;line-height:1.8;">
+            National Highway (motorway/trunk): <strong>100</strong><br>
+            State Highway (primary): <strong>85</strong><br>
+            Major District Road (secondary): <strong>70</strong><br>
+            District Road (tertiary): <strong>55</strong><br>
+            <span style="color:var(--red);">unclassified / residential / service / track / path / footway: <strong>REJECTED — not motorable</strong></span>
+          </div>
+        </div>
+        <div class="formula-box" style="margin-top:0">
+          <div class="f-title">Hard Exclusion Zones (Mandatory — Never Recommended)</div>
+          <div style="font-size:11.5px;line-height:1.8;color:var(--red);">
+            ❌ National Parks (Kanger Valley, Indravati, Guru Ghasi Das) — 15 km buffer<br>
+            ❌ Wildlife Sanctuaries (Barnawapara, Achanakmar, Udanti-Sitanadi) — 10 km buffer<br>
+            ❌ Waterfalls (Chitrakote, Tirathgarh) — 8 km buffer<br>
+            ❌ Rivers, Reservoirs, Dams, Water Bodies — 500 m buffer<br>
+            ❌ Dense Forest Zones (Bastar, Dantewada, Bijapur) — 1 km buffer<br>
+            ❌ Off-road locations — only motorway/trunk/primary/secondary/tertiary allowed<br>
+            ❌ No settlement within 2 km — rejected as uninhabited / false white-space
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ph">📋 Required Excel Column Schema</div>
+      <div class="panel-body">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Column Name</th><th>Type</th><th>Required?</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Outlet Name</strong></td><td>Text</td><td><span class="badge badge-red">Required</span></td><td>Unique outlet identifier</td></tr>
+              <tr><td><strong>Company</strong></td><td>Text</td><td><span class="badge badge-red">Required</span></td><td>HPCL / IOCL / BPCL / IOC</td></tr>
+              <tr><td><strong>Latitude</strong></td><td>Number</td><td><span class="badge badge-red">Required</span></td><td>Decimal degrees</td></tr>
+              <tr><td><strong>Longitude</strong></td><td>Number</td><td><span class="badge badge-red">Required</span></td><td>Decimal degrees</td></tr>
+              <tr><td><strong>District</strong></td><td>Text</td><td><span class="badge badge-green">Recommended</span></td><td>Administrative district name (used for balancing)</td></tr>
+              <tr><td><strong>Trading Area</strong></td><td>Text</td><td><span class="badge badge-amber">Optional</span></td><td>TA grouping (fallback if District missing)</td></tr>
+              <tr><td><strong>Sales Area</strong></td><td>Text</td><td><span class="badge badge-amber">Optional</span></td><td>SA grouping</td></tr>
+              <tr><td><strong>Volume</strong></td><td>Number</td><td><span class="badge badge-amber">Optional</span></td><td>Current KL/month</td></tr>
+              <tr><td><strong>Historical Volume</strong></td><td>Number</td><td><span class="badge badge-green">Recommended</span></td><td>Prior period for growth trend</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="info-box info" style="margin-top:14px;">
+          <strong>Tip:</strong> Company names are matched case-insensitively. Accepted values include: HPC, HPCL, HP, IOC, IOCL, INDIANOIL, BPC, BPCL, BP. Anything else is treated as "Other OMC".
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- LOGO CONSTANTS -->
+<script>
+/* ========================================================
+   COMPANY LOGO DATA URIs (48×48 px PNGs, base64-embedded)
+======================================================== */
+const LOGO_IOC  = 'data:image/png;base64,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';
+const LOGO_HPCL = 'data:image/png;base64,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';
+const headerLogoImg = document.getElementById('header-logo-img');
+if(headerLogoImg) headerLogoImg.src = LOGO_HPCL;
+const LOGO_BPCL = 'data:image/png;base64,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';
+
+/* ──────────────────────────────────────────────────────
+   makeCircleIcon — simple coloured circle for zoom < 10
+────────────────────────────────────────────────────── */
+function makeCircleIcon(color, size=10, star=false){
+  return L.divIcon({
+    className:'',
+    iconAnchor:[size, size],
+    popupAnchor:[0, -(size+4)],
+    html:`<div style="
+      width:${size*2}px;height:${size*2}px;
+      background:${color};
+      border-radius:50%;
+      border:2px solid rgba(255,255,255,0.9);
+      box-shadow:0 1px 4px rgba(0,0,0,.3);
+      display:flex;align-items:center;justify-content:center;
+      font-size:${size-2}px;
+      ${star?'box-shadow:0 0 0 3px rgba(255,107,0,0.5),0 1px 4px rgba(0,0,0,.3);':''}
+    ">${star?'★':''}</div>`
+  });
+}
+
+/* ──────────────────────────────────────────────────────
+   makeLogoIcon — company logo image for zoom >= 10
+   size: icon image size in px (displayed size)
+────────────────────────────────────────────────────── */
+function makeLogoIcon(logoDataUri, size=36){
+  const half = Math.round(size/2);
+  return L.divIcon({
+    className:'',
+    iconAnchor:[half, half],
+    popupAnchor:[0, -(half+4)],
+    html:`<div style="
+      width:${size}px;height:${size}px;
+      border-radius:50%;
+      background:#fff;
+      border:2px solid rgba(255,255,255,0.95);
+      box-shadow:0 2px 8px rgba(0,0,0,.35);
+      overflow:hidden;
+      display:flex;align-items:center;justify-content:center;
+    "><img src="${logoDataUri}" width="${size-4}" height="${size-4}" style="object-fit:contain;border-radius:50%;"/></div>`
+  });
+}
+
+/* ──────────────────────────────────────────────────────
+   OUTLET MARKER REGISTRY
+   Tracks every outlet marker so we can swap icons on zoom
+────────────────────────────────────────────────────── */
+const outletMarkerRegistry = [];   // {marker, company, circleIcon, logoIcon}
+
+/* ──────────────────────────────────────────────────────
+   swapOutletIcons — called on map zoomend
+   zoom < 10  → circle icons
+   zoom >= 10 → logo icons
+────────────────────────────────────────────────────── */
+function swapOutletIcons(){
+  const useLogos = map && map.getZoom() >= 10;
+  outletMarkerRegistry.forEach(entry => {
+    entry.marker.setIcon(useLogos ? entry.logoIcon : entry.circleIcon);
+  });
+}
+</script>
+
+<!-- MAIN SCRIPT -->
+<script>
+/* ========================================================
+   STATE
+======================================================== */
+let rawOutlets = [];         // parsed from file/demo
+let filteredOutlets = [];    // after district/SA filter
+let nroSites = [];           // generated NRO candidates (ALL ranked)
+let wsZones = [];            // white-space zones
+let coverageRadius = 5;      // km
+let minMarketVol = 250;      // KL/month minimum market volume threshold
+let currentDetailIndex = -1; // index of currently open detail panel item
+
+/* MAP LAYERS */
+let map;
+let layerGroups = {
+  hpcl: null, ioc: null, bpcl: null, other: null,
+  nro: null, heat: null, coverage: null
+};
+let layerVisible = {
+  hpcl:true, ioc:true, bpcl:true, other:true,
+  nro:true, heat:false, coverage:false
+};
+
+/* ========================================================
+   INIT MAP
+======================================================== */
+window.addEventListener('load', () => {
+  // Guard: if Leaflet failed to load, show a friendly error instead of crashing
+  if (typeof L === 'undefined') {
+    console.error('Leaflet (L) is not defined — map cannot initialize. Check network/CDN access.');
+    const mapEl = document.getElementById('map');
+    if (mapEl) {
+      mapEl.style.display = 'flex';
+      mapEl.style.alignItems = 'center';
+      mapEl.style.justifyContent = 'center';
+      mapEl.style.flexDirection = 'column';
+      mapEl.style.gap = '12px';
+      mapEl.style.background = '#f0f4fc';
+      mapEl.style.color = '#e23b3b';
+      mapEl.style.fontFamily = 'Segoe UI, sans-serif';
+      mapEl.innerHTML =
+        '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#e23b3b" stroke-width="2" stroke-linecap="round">' +
+          '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>' +
+        '</svg>' +
+        '<span style="font-weight:700;font-size:15px;">Map library could not load</span>' +
+        '<span style="font-size:12px;color:#6b7686;text-align:center;max-width:320px;">' +
+          'The Leaflet mapping library failed to load from the CDN.<br>' +
+          'Check your internet connection and reload the page.' +
+        '</span>';
+    }
+    return; // abort — do not call any L.* methods
+  }
+
+  map = L.map('map', {zoomControl: true}).setView([20.5, 78.9], 5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution:'© OpenStreetMap',
+    maxZoom:18
+  }).addTo(map);
+
+  for(let k in layerGroups){
+    layerGroups[k] = L.layerGroup().addTo(map);
+  }
+
+  // Zoom-based icon switching: circles below zoom 10, logos at zoom 10+
+  map.on('zoomend', swapOutletIcons);
+});
+
+/* ========================================================
+   NAV
+======================================================== */
+function showSection(id){
+  document.querySelectorAll('.page-section').forEach(s=>s.classList.remove('active'));
+  document.getElementById('sec-'+id).classList.add('active');
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  event.target.classList.add('active');
+  if(id==='map') setTimeout(()=>map.invalidateSize(),100);
+}
+
+/* ========================================================
+   RADIUS
+======================================================== */
+function updateRadius(v){
+  coverageRadius = parseFloat(v);
+  document.getElementById('radiusVal').textContent = parseFloat(v).toFixed(1)+' km';
+  // update gradient
+  const pct = (v-1)/(20-1)*100;
+  document.getElementById('radiusSlider').style.background=
+    `linear-gradient(90deg,var(--hpcl-blue) ${pct}%,#c5d5f5 ${pct}%)`;
+}
+
+function updateMinVol(v){
+  minMarketVol = parseFloat(v);
+  document.getElementById('minVolVal').textContent = parseFloat(v).toFixed(0)+' KL';
+  const pct = (v-0)/(2000-0)*100;
+  document.getElementById('minVolSlider').style.background=
+    `linear-gradient(90deg,var(--hpcl-blue) ${pct}%,#c5d5f5 ${pct}%)`;
+}
+
+/* ========================================================
+   DATA LOADING
+   Single shared pipeline used by:
+     - automatic default-dataset load on page open
+     - the "Upload New Data" control
+   Both paths funnel through parseWorkbookOrCSV() for
+   parsing and applyParsedData() for normalize/populate/alert,
+   so there is exactly one parsing implementation in the file.
+======================================================== */
+const DEFAULT_DATA_PATH = 'data/default_data.xlsx'; // relative path — GitHub Pages safe
+let currentDataSource = 'default'; // 'default' | 'uploaded'
+
+/**
+ * Parses a CSV text string or an Excel binary string into row objects.
+ * This is the SAME parsing logic previously inlined in handleFile,
+ * now shared by every load path (default / upload / new-upload).
+ */
+function parseWorkbookOrCSV(rawResult, fileName){
+  if(fileName.toLowerCase().endsWith('.csv')){
+    return parseCSV(rawResult);
+  }
+  const wb = XLSX.read(rawResult, {type:'binary'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws, {defval:''});
+}
+
+/**
+ * Applies parsed row data to dashboard state: normalize, populate
+ * filters, hide loading, and surface the same validation messages
+ * that previously lived inside handleFile. Shared by all load paths.
+ * `notify` controls whether success/info alerts are shown (kept off
+ * for the silent automatic default-dataset load on page open).
+ */
+function applyParsedData(data, notify){
+  if(!data || data.length===0){
+    hideLoading();
+    if(notify) alert('⚠️ The uploaded file has no data rows. Please check the file and try again.');
+    return false;
+  }
+
+  rawOutlets = normalizeData(data);
+  populateFilters();
+  hideLoading();
+
+  if(notify){
+    // Validation message — requirement #7 / #8
+    if(lastVolumeIssue){
+      alert('⚠️ '+lastVolumeIssue);
+    } else if(rawOutlets.length>0){
+      alert(`✅ ${rawOutlets.length} outlets loaded successfully`);
+    } else {
+      alert('⚠️ 0 outlets loaded. None of the rows had valid Latitude/Longitude values — please check those columns.');
+    }
+  }
+  return true;
+}
+
+function setDataSourceStatus(source){
+  currentDataSource = source;
+  const el = document.getElementById('dataSourceStatus');
+  if(!el) return;
+  if(source === 'uploaded'){
+    el.textContent = '🟠 Data Source: Uploaded Dataset';
+  } else {
+    el.textContent = '🟢 Data Source: Default Dataset';
+  }
+}
+
+/* ----- "Upload New Data" control ----- */
+function handleFile(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  document.getElementById('fileName').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    try{
+      const data = parseWorkbookOrCSV(ev.target.result, file.name);
+      const ok = applyParsedData(data, true);
+      if(ok) setDataSourceStatus('uploaded');
+    } catch(err){
+      hideLoading();
+      console.error('File parsing error:', err);
+      alert('❌ Error reading file: '+err.message);
+    }
+  };
+  showLoading('Reading file...');
+  if(file.name.endsWith('.csv')) reader.readAsText(file);
+  else reader.readAsBinaryString(file);
+}
+
+/* ----- New "📥 Download Default Data" control ----- */
+function downloadDefaultData(){
+  const a = document.createElement('a');
+  a.href = DEFAULT_DATA_PATH;
+  a.download = 'default_data.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+/**
+ * Automatically loads data/default_data.xlsx (relative path, GitHub
+ * Pages-safe) when the dashboard opens. Uses the same parseWorkbookOrCSV /
+ * applyParsedData pipeline as the upload controls — no duplicated parsing.
+ * On failure, shows the required inline message instead of crashing.
+ */
+function loadDefaultDataset(){
+  showLoading('Loading default dataset...');
+  fetch(DEFAULT_DATA_PATH)
+    .then(resp=>{
+      if(!resp.ok) throw new Error('Default dataset not found');
+      return resp.arrayBuffer();
+    })
+    .then(buf=>{
+      // XLSX.read accepts an array of bytes the same way it accepts a
+      // binary string — reuse the exact same parse function as uploads.
+      const bytes = new Uint8Array(buf);
+      let binary = '';
+      for(let i=0;i<bytes.length;i++) binary += String.fromCharCode(bytes[i]);
+      const data = parseWorkbookOrCSV(binary, 'default_data.xlsx');
+      const ok = applyParsedData(data, false);
+      if(ok){
+        setDataSourceStatus('default');
+        document.getElementById('fileName').textContent = 'default_data.xlsx (auto-loaded)';
+      } else {
+        showDefaultDatasetMissingNotice();
+      }
+    })
+    .catch(()=>{
+      hideLoading();
+      showDefaultDatasetMissingNotice();
+    });
+}
+
+function showDefaultDatasetMissingNotice(){
+  const el = document.getElementById('dataSourceStatus');
+  if(el) el.textContent = 'Default dataset not found. Please upload an Excel file.';
+}
+
+document.addEventListener('DOMContentLoaded', loadDefaultDataset);
+
+function parseCSV(text){
+  const lines = text.trim().split('\n');
+  const headers = lines[0].split(',').map(h=>h.trim().replace(/"/g,''));
+  return lines.slice(1).map(l=>{
+    const vals = l.split(',').map(v=>v.trim().replace(/"/g,''));
+    const obj = {};
+    headers.forEach((h,i)=>obj[h]=vals[i]||'');
+    return obj;
+  });
+}
+
+/* ========================================================
+   MONTHLY MS/HSD VOLUME COLUMN DETECTION
+   Recognizes columns like "MS Apr 2024", "HSD Apr 2026", etc.
+   and dynamically picks the latest month for Current Volume
+   and the same calendar month one year earlier (or the
+   nearest 12-month-back column) for Historical Volume.
+======================================================== */
+let lastVolumeIssue = null; // set by normalizeData(), read by handleFile()
+
+const MONTH_MAP = {
+  jan:0, january:0, feb:1, february:1, mar:2, march:2, apr:3, april:3,
+  may:4, jun:5, june:5, jul:6, july:6, aug:7, august:7,
+  sep:8, sept:8, september:8, oct:9, october:9, nov:10, november:10, dec:11, december:11
+};
+
+function detectVolumeColumns(rows){
+  if(!rows || !rows.length) return null;
+  const headers = Object.keys(rows[0]);
+  const monthsAvail = {}; // 'YYYY-MM' -> {year, month, ms:colName|null, hsd:colName|null}
+  const re = /^(MS|HSD)[\s_\-]+([A-Za-z]+)[\s_\-]+(\d{4})$/i;
+
+  headers.forEach(h=>{
+    const clean = String(h).replace(/\(.*?\)/g,'').trim();
+    const m = clean.match(re);
+    if(!m) return;
+    const fuel = m[1].toUpperCase();
+    const monthName = m[2].toLowerCase();
+    const year = parseInt(m[3],10);
+    if(!(monthName in MONTH_MAP)) return;
+    const month = MONTH_MAP[monthName];
+    const key = `${year}-${String(month+1).padStart(2,'0')}`;
+    if(!monthsAvail[key]) monthsAvail[key] = {year, month, ms:null, hsd:null};
+    if(fuel==='MS') monthsAvail[key].ms = h;
+    else monthsAvail[key].hsd = h;
+  });
+
+  const sortedKeys = Object.keys(monthsAvail).sort((a,b)=>{
+    const A=monthsAvail[a], B=monthsAvail[b];
+    return (A.year*12+A.month)-(B.year*12+B.month);
+  });
+
+  if(!sortedKeys.length) return null;
+  return { monthsAvail, sortedKeys };
+}
+
+function pickCurrentAndHistorical(volInfo){
+  const { monthsAvail, sortedKeys } = volInfo;
+  const currentKey = sortedKeys[sortedKeys.length-1];
+  const current = monthsAvail[currentKey];
+
+  // Preferred: same calendar month, previous year
+  const targetKey = `${current.year-1}-${String(current.month+1).padStart(2,'0')}`;
+  let historicalKey = monthsAvail[targetKey] ? targetKey : null;
+
+  // Fallback: walk back 12 entries in the available month list
+  if(!historicalKey){
+    const idx = sortedKeys.indexOf(currentKey) - 12;
+    historicalKey = idx>=0 ? sortedKeys[idx] : sortedKeys[0];
+  }
+
+  return {
+    currentKey, historicalKey,
+    current, historical: monthsAvail[historicalKey]
+  };
+}
+
+/* ========================================================
+   NORMALIZE DATA
+======================================================== */
+function normalizeData(rows){
+  lastVolumeIssue = null;
+
+  if(!rows || !rows.length){
+    lastVolumeIssue = 'No data rows found in the uploaded file.';
+    return [];
+  }
+
+  const volInfo = detectVolumeColumns(rows);
+  let currentCols = null, historicalCols = null;
+
+  if(volInfo){
+    const picked = pickCurrentAndHistorical(volInfo);
+    currentCols = picked.current;
+    historicalCols = picked.historical;
+    console.log(`📅 Current Volume month: ${picked.currentKey}  (MS col: "${currentCols.ms||'—'}", HSD col: "${currentCols.hsd||'—'}")`);
+    console.log(`📅 Historical Volume month: ${picked.historicalKey}  (MS col: "${historicalCols.ms||'—'}", HSD col: "${historicalCols.hsd||'—'}")`);
+  } else {
+    console.warn('⚠️ No "MS <Month> <Year>" / "HSD <Month> <Year>" columns detected — falling back to legacy "Volume" / "Historical Volume" columns if present.');
+  }
+
+  let hpclCount=0, iocCount=0, bpclCount=0, validLatCount=0, validLngCount=0;
+  let curTotal=0, histTotal=0, anyVolumeFound=false;
+
+  const mapped = rows.map(r=>{
+    // flexible column name matching
+    const get = (...keys) => {
+      for(let k of keys){
+        const match = Object.keys(r).find(rk=>rk.toLowerCase().replace(/[^a-z]/g,'')=== k.toLowerCase().replace(/[^a-z]/g,''));
+        if(match && r[match]!=='' && r[match]!==undefined) return r[match];
+      }
+      return '';
+    };
+
+    const lat = parseFloat(get('latitude','lat','Latitude','LAT')) || null;
+    const lng = parseFloat(get('longitude','lng','long','Longitude','LON')) || null;
+    if(lat!==null) validLatCount++;
+    if(lng!==null) validLngCount++;
+
+    let vol = 0, hvol = 0;
+    if(currentCols){
+      const msVal  = currentCols.ms  ? parseFloat(r[currentCols.ms])  : NaN;
+      const hsdVal = currentCols.hsd ? parseFloat(r[currentCols.hsd]) : NaN;
+      vol = (isNaN(msVal)?0:msVal) + (isNaN(hsdVal)?0:hsdVal);
+    }
+    if(historicalCols){
+      const msVal  = historicalCols.ms  ? parseFloat(r[historicalCols.ms])  : NaN;
+      const hsdVal = historicalCols.hsd ? parseFloat(r[historicalCols.hsd]) : NaN;
+      hvol = (isNaN(msVal)?0:msVal) + (isNaN(hsdVal)?0:hsdVal);
+    }
+
+    if(!currentCols){
+      // Legacy fallback — only used when no MS/HSD monthly columns exist at all
+      vol  = parseFloat(get('volume','Volume','vol','sales','Sales')) || 0;
+      hvol = parseFloat(get('historicalvolume','histvolume','previousvolume','prevvol','historicalvol')) || 0;
+    }
+
+    if(vol>0 || hvol>0) anyVolumeFound = true;
+    curTotal  += vol;
+    histTotal += hvol;
+
+    const company = classifyCompany((get('company','Company','OMC','omc','Brand','brand')||'').trim().toUpperCase());
+    if(company==='HPCL') hpclCount++;
+    else if(company==='IOC') iocCount++;
+    else if(company==='BPCL') bpclCount++;
+
+    return {
+      name: get('outletname','OutletName','name','Name','outlet','Outlet') || 'Unnamed',
+      company,
+      lat, lng,
+      district: get('district','District','DISTRICT') || '',
+      ta: get('Trading_Area_Name','Trading Area','TradingArea','TA') || 'Unknown',
+      sa: get('salesarea','SalesArea','SA','sa') || 'Unknown',
+      volume: vol,
+      histVolume: hvol,
+      growthRate: hvol>0 ? ((vol-hvol)/hvol)*100 : 0
+    };
+  });
+
+  // Requirement #6 — diagnostic console logs
+  console.log('Total outlets loaded:', mapped.length);
+  console.log('HPCL count:', hpclCount);
+  console.log('IOC count:', iocCount);
+  console.log('BPCL count:', bpclCount);
+  console.log('Number of outlets with valid latitude:', validLatCount);
+  console.log('Number of outlets with valid longitude:', validLngCount);
+  console.log('Current volume total:', curTotal);
+  console.log('Historical volume total:', histTotal);
+
+  // Requirement #8 — clear error if no usable volume data at all
+  if(!anyVolumeFound){
+    lastVolumeIssue = 'No valid volume columns found. Expected monthly columns like "MS Apr 2026" / "HSD Apr 2026" (or a legacy "Volume" column). All volumes will show as 0 until this is fixed.';
+  }
+
+  return mapped.filter(r=>r.lat && r.lng);
+}
+
+function classifyCompany(c){
+  if(!c) return 'OTHER';
+  if(/HPC|HPCL|HINDUST/.test(c)) return 'HPCL';
+  if(/IOC|IOCL|INDIAN/.test(c)) return 'IOC';
+  if(/BPC|BPCL|BHARAT/.test(c)) return 'BPCL';
+  return 'OTHER';
+}
+
+/* ========================================================
+   FILTERS
+======================================================== */
+function populateFilters(){
+  const districts = [...new Set(rawOutlets.map(o=>o.district))].filter(Boolean).sort();
+  const sas = [...new Set(rawOutlets.map(o=>o.sa))].filter(Boolean).sort();
+  const distEl = document.getElementById('districtFilter');
+  const saEl = document.getElementById('saFilter');
+  distEl.innerHTML = '<option value="">All Districts</option>' + districts.map(d=>`<option>${d}</option>`).join('');
+  saEl.innerHTML = '<option value="">All Sales Areas</option>' + sas.map(s=>`<option>${s}</option>`).join('');
+}
+
+function applyFilters(){
+  const district = document.getElementById('districtFilter').value;
+  const sa = document.getElementById('saFilter').value;
+  filteredOutlets = rawOutlets.filter(o=>
+    (!district || o.district===district) && (!sa || o.sa===sa)
+  );
+}
+
+/* ========================================================
+   HAVERSINE DISTANCE
+======================================================== */
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371;
+  const dLat=(lat2-lat1)*Math.PI/180;
+  const dLon=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function nearestOutlet(lat,lng,outlets){
+  let best=null,bestDist=Infinity;
+  outlets.forEach(o=>{
+    if(!o.lat||!o.lng) return;
+    const d=haversine(lat,lng,o.lat,o.lng);
+    if(d<bestDist){bestDist=d;best=o;}
+  });
+  return {outlet:best,dist:bestDist};
+}
+
+function outletsWithin(lat,lng,outlets,r){
+  return outlets.filter(o=>o.lat&&o.lng&&haversine(lat,lng,o.lat,o.lng)<=r);
+}
+
+/* ========================================================
+   ROAD-BASED EXCLUSION ZONES (OSM Overpass)
+   All coordinates within these zones are hard-rejected.
+   These are baked in for Chhattisgarh's known sensitive areas.
+======================================================== */
+// ALLOWED road types — any candidate NOT on these is rejected before scoring
+const ALLOWED_ROAD_TYPES = new Set(['motorway','trunk','primary','secondary','tertiary']);
+
+// Road quality score (requirement #7)
+const ROAD_QUALITY_SCORE = {
+  motorway: 100, trunk: 100,    // NH = 100
+  primary:  85,                 // SH = 85
+  secondary: 70,                // MDR = 70
+  tertiary:  55                 // District Road = 55
+};
+
+// Hard exclusion zones — corrected radii per specification
+const EXCLUSION_ZONES = [
+  // Waterfalls — 8 km each
+  {name:'Chitrakote Falls',      lat:19.2083, lng:81.7167, radius:8.0,  type:'waterfall'},
+  {name:'Tirathgarh Falls',      lat:18.9833, lng:81.8500, radius:8.0,  type:'waterfall'},
+  // National Parks — 15 km each
+  {name:'Kanger Valley NP',      lat:18.9500, lng:81.9000, radius:15.0, type:'national_park'},
+  {name:'Indravati NP',          lat:18.7000, lng:80.7000, radius:15.0, type:'national_park'},
+  {name:'Guru Ghasi Das NP',     lat:23.6000, lng:82.4000, radius:15.0, type:'national_park'},
+  // Wildlife Sanctuaries — 10 km each
+  {name:'Barnawapara Sanctuary', lat:21.3200, lng:82.0800, radius:10.0, type:'sanctuary'},
+  {name:'Achanakmar Sanctuary',  lat:22.3000, lng:81.7000, radius:10.0, type:'sanctuary'},
+  {name:'Udanti-Sitanadi WL',    lat:20.4000, lng:82.1000, radius:10.0, type:'sanctuary'},
+  // Dense forest zones — 1 km buffer (coordinates mark forest centroids; buffer = 1 km hard reject)
+  {name:'Bastar Forest Belt',    lat:19.0000, lng:81.5000, radius:1.0,  type:'forest'},
+  {name:'Dantewada Forest',      lat:18.8000, lng:81.3500, radius:1.0,  type:'forest'},
+  {name:'Bijapur Forest',        lat:18.8500, lng:80.9500, radius:1.0,  type:'forest'},
+  // Water bodies — 500 m each (0.5 km)
+  {name:'Hasdeo Wetlands',       lat:22.3500, lng:82.5500, radius:0.5,  type:'water'},
+  {name:'Gangrel Reservoir',     lat:20.6167, lng:81.7833, radius:0.5,  type:'water'},
+  {name:'Minimata Dam',          lat:22.5167, lng:82.5667, radius:0.5,  type:'water'},
+  {name:'Dudhawa Reservoir',     lat:22.0333, lng:80.8667, radius:0.5,  type:'water'},
+  {name:'Tandula Reservoir',     lat:20.6833, lng:81.1333, radius:0.5,  type:'water'},
+  {name:'Indravati River',       lat:19.1000, lng:81.6000, radius:0.5,  type:'water'},
+  {name:'Sheonath River',        lat:21.4000, lng:81.8000, radius:0.5,  type:'water'},
+  {name:'Mahanadi River',        lat:21.2000, lng:82.0000, radius:0.5,  type:'water'},
+];
+
+// Road type scoring weights — ONLY allowed road types matter now
+// Uses ROAD_QUALITY_SCORE for final score (req #7); this is the feasibility sub-score
+const ROAD_SCORE = {
+  motorway: 35, trunk: 35, primary: 30,
+  secondary: 20, tertiary: 12
+  // unclassified, residential, service, track, path, footway are REJECTED — never scored
+};
+
+// Road label for display
+const ROAD_LABEL = {
+  motorway: 'National Highway', trunk: 'National Highway',
+  primary: 'State Highway', secondary: 'Major District Road',
+  tertiary: 'District Road'
+};
+
+// Cache for Overpass road data
+let roadCandidatesCache = null;
+let lastBboxKey = '';
+
+/* ========================================================
+   OVERPASS API — FETCH ROAD NETWORK FOR BOUNDING BOX
+   Generates candidate points every 500m along roads.
+   HARD RULE: No off-road candidate is ever created.
+======================================================== */
+async function fetchRoadCandidates(outlets) {
+  const valid = outlets.filter(o=>o.lat&&o.lng);
+  if(!valid.length) return [];
+
+  const lats = valid.map(o=>o.lat);
+  const lngs = valid.map(o=>o.lng);
+  const buf = 0.06; // ~6.5km buffer
+  const minLat = (Math.min(...lats) - buf).toFixed(5);
+  const maxLat = (Math.max(...lats) + buf).toFixed(5);
+  const minLng = (Math.min(...lngs) - buf).toFixed(5);
+  const maxLng = (Math.max(...lngs) + buf).toFixed(5);
+
+  const bboxKey = `${minLat},${minLng},${maxLat},${maxLng}`;
+  if(bboxKey === lastBboxKey && roadCandidatesCache) {
+    console.log('♻️ Using cached road candidates:', roadCandidatesCache.length);
+    return roadCandidatesCache;
+  }
+
+  document.getElementById('loadingMsg').textContent = 'Fetching road network from OpenStreetMap...';
+
+  // Query ONLY allowed motorable roads — strict whitelist per road-only rule
+  const query = `
+[out:json][timeout:60];
+way["highway"~"^(motorway|trunk|primary|secondary|tertiary)$"]
+  (${minLat},${minLng},${maxLat},${maxLng});
+out geom;`;
+
+  let ways = [];
+  try {
+    const resp = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: query
+    });
+    if(!resp.ok) throw new Error(`Overpass HTTP ${resp.status}`);
+    const data = await resp.json();
+    ways = data.elements || [];
+    console.log(`🛣️ Overpass returned ${ways.length} road segments`);
+  } catch(err) {
+    console.warn('⚠️ Overpass API failed, trying mirror:', err.message);
+    try {
+      const resp2 = await fetch('https://overpass.kumi.systems/api/interpreter', {
+        method: 'POST',
+        body: query
+      });
+      if(resp2.ok){
+        const data2 = await resp2.json();
+        ways = data2.elements || [];
+        console.log(`🛣️ Mirror returned ${ways.length} road segments`);
+      }
+    } catch(err2) {
+      console.warn('⚠️ Both Overpass endpoints failed. Falling back to outlet-cluster method.');
+      return generateFallbackRoadCandidates(outlets);
+    }
+  }
+
+  // Generate points every 500m along each road segment
+  const STEP_KM = 0.5;
+  const candidates = [];
+  const seen = new Set();
+
+  ways.forEach(way => {
+    if(!way.geometry || way.geometry.length < 2) return;
+    const roadType = way.tags?.highway || '';
+    // ROAD-ONLY RULE: reject any way not in allowed set
+    if(!ALLOWED_ROAD_TYPES.has(roadType)) return;
+    const roadScore = ROAD_SCORE[roadType] || 0;
+    const roadQuality = ROAD_QUALITY_SCORE[roadType] || 0;
+    const roadLabel = ROAD_LABEL[roadType] || 'Road';
+    const isNH = ['motorway','trunk'].includes(roadType);
+    const isSH = roadType === 'primary';
+
+    const geom = way.geometry;
+    for(let i=0; i<geom.length-1; i++){
+      const p1 = geom[i];
+      const p2 = geom[i+1];
+      const segLen = haversine(p1.lat, p1.lon, p2.lat, p2.lon);
+      const steps = Math.max(1, Math.floor(segLen / STEP_KM));
+
+      for(let s=0; s<=steps; s++){
+        const t = s/steps;
+        // Exact interpolation on road centerline — NO offsets, NO random shifts
+        const lat = p1.lat + (p2.lat - p1.lat) * t;
+        const lon = p1.lon + (p2.lon - p1.lon) * t;
+
+        // Deduplicate to 200m grid
+        const gridKey = `${Math.round(lat*5000)},${Math.round(lon*5000)}`;
+        if(seen.has(gridKey)) continue;
+        seen.add(gridKey);
+
+        candidates.push({
+          lat, lng: lon,
+          roadType, roadScore, roadQuality, roadLabel,
+          isNH, isSH,
+          onRoad: true,          // flag: generated directly from road geometry
+          source: `road_${roadType}`
+        });
+      }
+    }
+  });
+
+  console.log(`📍 Generated ${candidates.length} road-based candidate points`);
+
+  // Only cache non-empty results — if Overpass returned 0 ways, don't poison
+  // the cache so the next run can try again or use the fallback.
+  if(candidates.length > 0){
+    lastBboxKey = bboxKey;
+    roadCandidatesCache = candidates;
+  } else {
+    console.warn('⚠️ Overpass returned 0 road segments for this bbox — using fallback, not caching empty result.');
+    return generateFallbackRoadCandidates(outlets);
+  }
+  return candidates;
+}
+
+/* ========================================================
+   FALLBACK — When Overpass is unreachable
+   Generate candidates along outlet corridors (outlet-to-outlet
+   interpolation on inferred road corridors).
+======================================================== */
+function generateFallbackRoadCandidates(outlets) {
+  console.log('🔄 Using fallback outlet-corridor candidate generation (tertiary road proxy)');
+  const valid = outlets.filter(o=>o.lat&&o.lng);
+  const candidates = [];
+  const seen = new Set();
+  const STEP_KM = 0.5;
+
+  // Petrol pumps are always sited on roads — interpolate between nearby outlets
+  // as a proxy for road corridors. Tag as tertiary (most conservative allowed type).
+  for(let i=0; i<valid.length; i++){
+    for(let j=i+1; j<valid.length; j++){
+      const a = valid[i], b = valid[j];
+      const dist = haversine(a.lat, a.lng, b.lat, b.lng);
+      if(dist > 20) continue;
+      const steps = Math.max(1, Math.floor(dist / STEP_KM));
+      for(let s=0; s<=steps; s++){
+        const t = s/steps;
+        // Strict centerline interpolation — NO offsets
+        const lat = a.lat + (b.lat - a.lat) * t;
+        const lng = a.lng + (b.lng - a.lng) * t;
+        const gridKey = `${Math.round(lat*5000)},${Math.round(lng*5000)}`;
+        if(seen.has(gridKey)) continue;
+        seen.add(gridKey);
+        candidates.push({
+          lat, lng,
+          roadType: 'tertiary',
+          roadScore: ROAD_SCORE['tertiary'],
+          roadQuality: ROAD_QUALITY_SCORE['tertiary'],
+          roadLabel: 'District Road (inferred)',
+          isNH: false, isSH: false,
+          onRoad: true,
+          source: 'fallback_corridor'
+        });
+      }
+    }
+  }
+  console.log(`📍 Fallback generated ${candidates.length} corridor candidates`);
+  return candidates;
+}
+
+/* ========================================================
+   EXCLUSION ZONE CHECK
+   Returns true if point should be HARD REJECTED
+======================================================== */
+function isInExclusionZone(lat, lng) {
+  for(const zone of EXCLUSION_ZONES){
+    const d = haversine(lat, lng, zone.lat, zone.lng);
+    if(d <= zone.radius) return {rejected: true, reason: zone.name, type: zone.type};
+  }
+  return {rejected: false};
+}
+
+// Validate a candidate satisfies ALL five mandatory criteria — Road, Settlement, Not Forest, Not Water, Not Protected
+// Returns {valid:bool, failures:[]} for diagnostics tracking
+function validateCandidate(cand, outlets, diagCounters) {
+  const failures = [];
+
+  // 1. Road rule — must be on allowed road type (already guaranteed by generation but double-check)
+  if(!ALLOWED_ROAD_TYPES.has(cand.roadType)){
+    failures.push('road_type');
+    diagCounters.rejRoadType++;
+  }
+
+  // 2. Exclusion zone check (forest / water / protected area)
+  const ex = isInExclusionZone(cand.lat, cand.lng);
+  if(ex.rejected){
+    if(ex.type === 'forest')       { failures.push('forest');    diagCounters.rejForest++; }
+    else if(ex.type === 'water')   { failures.push('water');     diagCounters.rejWater++;  }
+    else if(ex.type === 'national_park'){ failures.push('protected'); diagCounters.rejProtected++; }
+    else if(ex.type === 'sanctuary'){    failures.push('protected'); diagCounters.rejProtected++; }
+    else if(ex.type === 'waterfall'){    failures.push('water');     diagCounters.rejWater++;      }
+  }
+
+  // 3. Settlement check — at least one outlet within 2 km (outlet = settlement proxy)
+  const nearbyAll = outletsWithin(cand.lat, cand.lng, outlets, 2);
+  if(nearbyAll.length === 0){
+    failures.push('no_settlement');
+    diagCounters.rejNoSettlement++;
+  }
+
+  return { valid: failures.length === 0, failures };
+}
+
+/* ========================================================
+   SETTLEMENT FEASIBILITY CHECK
+   A candidate needs a settlement or traffic generator nearby
+======================================================== */
+function checkSettlementFeasibility(lat, lng, outlets) {
+  // Settlement rule: at least one outlet within 2 km (mandatory, per spec)
+  const nearbyAll = outletsWithin(lat, lng, outlets, 2);
+  if(nearbyAll.length > 0) return {feasible: true, nearestSettlementDist: nearestOutlet(lat,lng,outlets).dist};
+  return {feasible: false, nearestSettlementDist: 99};
+}
+
+/* ========================================================
+   SPATIAL DEDUPLICATION — Minimum 15km between NRO sites
+======================================================== */
+function spatialDedup(sites, minDistKm){
+  const kept = [];
+  for(const site of sites){
+    const tooClose = kept.some(k=>haversine(site.lat,site.lng,k.lat,k.lng) < minDistKm);
+    if(!tooClose) kept.push(site);
+  }
+  return kept;
+}
+
+/* ========================================================
+   DISTRICT BALANCING — Prevent any single district dominating
+======================================================== */
+function districtBalance(sites, maxTotal, maxPerDistrict){
+  // District-first: group by district, interleave so every district gets fair representation
+  // Prevents any single district from monopolising recommendations
+  const byDistrict = {};
+  sites.forEach(s => {
+    const d = s.district || 'Unknown';
+    if(!byDistrict[d]) byDistrict[d] = [];
+    byDistrict[d].push(s);
+  });
+
+  // Sort districts by number of available candidates descending (so larger pools don't starve)
+  const districtKeys = Object.keys(byDistrict).sort((a,b)=>byDistrict[b].length - byDistrict[a].length);
+
+  const result = [];
+  const counts = {};
+  districtKeys.forEach(d => counts[d] = 0);
+
+  // Round-robin pass: take 1 from each district per round, up to maxPerDistrict rounds
+  for(let round = 0; round < maxPerDistrict && result.length < maxTotal; round++){
+    for(const d of districtKeys){
+      if(result.length >= maxTotal) break;
+      const pool = byDistrict[d];
+      if(counts[d] < pool.length){
+        result.push(pool[counts[d]]);
+        counts[d]++;
+      }
+    }
+  }
+  return result;
+}
+
+/* ========================================================
+   SCORE ROAD CANDIDATE — v5 Road-Based Feasibility Model
+   ─────────────────────────────────────────────────────
+   Market Opportunity Score (0–100):
+     35% HPCL Coverage Gap
+     30% HPCL Market Share Deficit
+     15% Competitor Volume
+     10% Growth Trend
+      5% Competitor Density
+      5% Road Hierarchy Bonus
+   ─────────────────────────────────────────────────────
+   Cannibalization Score (0–100 penalty scale):
+     0–2 km from HPCL:  80 penalty
+     2–5 km from HPCL:  50 penalty
+     5–8 km from HPCL:  25 penalty
+     >8 km from HPCL:    0 penalty
+   ─────────────────────────────────────────────────────
+   Feasibility Score (0–100):
+     Road hierarchy score        (0–35)
+     Nearest outlet proximity    (0–30)
+     Market activity (vol nearby)(0–20)
+     Settlement proximity        (0–15)
+   Minimum Feasibility = 70 to appear in Top 50
+   ─────────────────────────────────────────────────────
+   Final Score = 40% Opportunity + 20% Cannibalization-adj + 40% Feasibility
+======================================================== */
+function scoreCandidate(cand, outlets){
+  const hpcl = outlets.filter(o=>o.company==='HPCL');
+  const ioc  = outlets.filter(o=>o.company==='IOC');
+  const bpcl = outlets.filter(o=>o.company==='BPCL');
+  const comp = outlets.filter(o=>o.company!=='HPCL');
+  const all  = outlets;
+  const r = coverageRadius;
+
+  // Nearest outlets
+  const {outlet:nearHPCL, dist:hpclDist} = nearestOutlet(cand.lat,cand.lng,hpcl);
+  const {outlet:nearIOC,  dist:iocDist}  = nearestOutlet(cand.lat,cand.lng,ioc);
+  const {outlet:nearBPCL, dist:bpclDist} = nearestOutlet(cand.lat,cand.lng,bpcl);
+  const {outlet:nearAny,  dist:nearAnyDist} = nearestOutlet(cand.lat,cand.lng,all);
+
+  // District: use actual district field from nearest outlet, fallback to TA/SA
+  const districtFromData = (o) => {
+    if(!o) return 'Unassigned';
+    if(o.district && o.district.trim()) return o.district.trim();
+    if(o.ta && o.ta!=='Unknown') return o.ta;
+    if(o.sa && o.sa!=='Unknown') return o.sa;
+    return 'Unassigned';
+  };
+  const district = districtFromData(nearAny);
+
+  // Within-radius counts
+  const compWithin = outletsWithin(cand.lat,cand.lng,comp,r);
+  const hpclWithin = outletsWithin(cand.lat,cand.lng,hpcl,r);
+  const allWithin  = outletsWithin(cand.lat,cand.lng,all,r);
+  const allWithin5 = outletsWithin(cand.lat,cand.lng,all,5);
+
+  // Volumes
+  const hpclVol    = hpclWithin.reduce((s,o)=>s+o.volume,0);
+  const compVol    = compWithin.reduce((s,o)=>s+o.volume,0);
+  const totalVol   = allWithin.reduce((s,o)=>s+o.volume,0);
+  const totalVol5km= allWithin5.reduce((s,o)=>s+o.volume,0);
+
+  // HPCL Market Share
+  const hpclSharePct    = totalVol>0 ? (hpclVol/totalVol)*100 : 0;
+  const mktShareDeficit = totalVol>0 ? (compVol/totalVol)*100 : 0;
+
+  // Road hierarchy info from candidate (set during road generation)
+  const roadScore   = cand.roadScore   || 0;    // 0–35 (feasibility sub-score)
+  const roadQuality = cand.roadQuality || (ROAD_QUALITY_SCORE[cand.roadType] || 0); // 0–100 NH/SH/MDR/DR
+  const roadLabel   = cand.roadLabel   || 'Road';
+  const isNH        = cand.isNH || false;
+  const isSH        = cand.isSH || false;
+
+  // ── CANNIBALIZATION SCORE (0–100 penalty) ──────────────────
+  let canniLevel = 'None', canniPenaltyRaw = 0;
+  if(hpclDist <= 2){
+    canniLevel = 'Very High'; canniPenaltyRaw = 80;
+  } else if(hpclDist <= 5){
+    canniLevel = 'High';      canniPenaltyRaw = 50;
+  } else if(hpclDist <= 8){
+    canniLevel = 'Medium';    canniPenaltyRaw = 25;
+  } else {
+    canniLevel = 'None';      canniPenaltyRaw = 0;
+  }
+  // Cannibalization Score for display (vol-based legacy)
+  const canniScore = totalVol>0 ? (hpclVol/totalVol)*100 : 0;
+  // Cannibalization contribution (20% weight, inverted — lower penalty = higher score)
+  const canniContrib = Math.max(0, 100 - canniPenaltyRaw);
+  const canniPenaltyPts = canniPenaltyRaw; // kept for display
+
+  // ── OPPORTUNITY SCORE (0–100) ──────────────────────────────
+  const maxGapKm = r * 4;
+  const distNorm = Math.min(1, hpclDist / maxGapKm);
+
+  // 1. Coverage Gap (35%)
+  const coverageGapScore = distNorm * 100 * 0.35;
+  // 2. Market Share Deficit (30%)
+  const deficitScore = (mktShareDeficit / 100) * 100 * 0.30;
+  // 3. Competitor Volume (15%)
+  const compVolScore = compVol>0
+    ? Math.min(100, Math.log(compVol+1)/Math.log(3000)*100) * 0.15 : 0;
+  // 4. Growth Trend (10%)
+  const allWithin10 = outletsWithin(cand.lat,cand.lng,all,Math.max(r,10));
+  const avgGrowth = allWithin10.length>0
+    ? allWithin10.reduce((s,o)=>s+o.growthRate,0)/allWithin10.length : 0;
+  const growthScore = Math.min(100, Math.max(0, 50+avgGrowth*5)) * 0.10;
+  // 5. Competitor Density (5%)
+  const densityScore = Math.min(100, (compWithin.length/8)*100) * 0.05;
+  // 6. Road quality bonus (5%) — uses NH=100/SH=85/MDR=70/DR=55 scale
+  const roadBonus = Math.min(100, roadQuality) * 0.05;
+
+  const opportunityScore = Math.max(0, Math.min(100,
+    coverageGapScore + deficitScore + compVolScore + growthScore + densityScore + roadBonus
+  ));
+
+  // ── FEASIBILITY SCORE (0–100) ──────────────────────────────
+  // a. Road hierarchy (0–35)
+  const fsRoad = Math.min(35, (roadScore / 35) * 35);
+  // b. Nearest outlet proximity (0–30) — closer to any outlet = more accessible area
+  let fsProximity = 0;
+  if(nearAnyDist <= 2)       fsProximity = 30;
+  else if(nearAnyDist <= 5)  fsProximity = 24;
+  else if(nearAnyDist <= 10) fsProximity = 15;
+  else if(nearAnyDist <= 15) fsProximity = 8;
+  // c. Market activity volume nearby (0–20)
+  const fsMarket = Math.min(20, (totalVol5km / 2000) * 20);
+  // d. Settlement proximity — competitor outlets = settlement indicator (0–15)
+  const fsSettlement = compWithin.length>=3 ? 15 : compWithin.length>=1 ? 10 : nearAnyDist<=8 ? 6 : 0;
+
+  const feasibilityNum = Math.min(100, Math.round(fsRoad + fsProximity + fsMarket + fsSettlement));
+  let feasibilityScore = feasibilityNum >= 70 ? 'High' : feasibilityNum >= 45 ? 'Medium' : 'Low';
+
+  // Highway opportunity
+  const highVolNearby = allWithin.filter(o=>o.volume>500);
+  const highwayOpportunity = (isNH || isSH || (nearAnyDist<=3 && highVolNearby.length>=2)) ? 'Yes' : 'No';
+
+  // ── FINAL SCORE — 40% Opp + 20% Canni-adj + 40% Feasibility ──
+  const finalScore = Math.max(0, Math.min(100,
+    opportunityScore * 0.40 +
+    canniContrib     * 0.20 +
+    feasibilityNum   * 0.40
+  ));
+
+  // Capture estimate
+  const capturePct = Math.min(45, Math.round(15 + distNorm*15 + (mktShareDeficit/100)*15));
+  const captureVol = Math.round(compVol * capturePct/100);
+  const potentialShareGain = totalVol>0
+    ? Math.round((captureVol/(totalVol+captureVol))*100*10)/10 : 0;
+
+  // ── RECOMMENDATION REASON ────────────────────────────────────
+  const reasons = [];
+  reasons.push(`On ${roadLabel}`);
+  if(isNH) reasons.push('National Highway corridor — high traffic volume');
+  else if(isSH) reasons.push('State Highway approach — strong commercial viability');
+  if(hpclDist >= r*2) reasons.push(`Large HPCL gap — nearest HPCL is ${hpclDist.toFixed(1)} km away`);
+  else if(hpclDist >= r) reasons.push(`Moderate HPCL gap (${hpclDist.toFixed(1)} km)`);
+  if(compWithin.length > 3) reasons.push(`${compWithin.length} competitor outlets nearby (IOC: ${outletsWithin(cand.lat,cand.lng,ioc,r).length}, BPCL: ${outletsWithin(cand.lat,cand.lng,bpcl,r).length})`);
+  else if(compWithin.length > 0) reasons.push(`${compWithin.length} competitor outlets in area`);
+  if(hpclSharePct < 15) reasons.push(`HPCL severely underrepresented (${hpclSharePct.toFixed(0)}% share)`);
+  else if(hpclSharePct < 30) reasons.push(`Low HPCL market share (${hpclSharePct.toFixed(0)}%)`);
+  if(captureVol > 300) reasons.push(`High capture potential: est. ${captureVol.toLocaleString()} KL/mo`);
+  else if(captureVol > 100) reasons.push(`Moderate capture: est. ${captureVol.toLocaleString()} KL/mo`);
+  if(mktShareDeficit > 70) reasons.push(`Competitor-dominated corridor (${mktShareDeficit.toFixed(0)}% share)`);
+  if(highwayOpportunity==='Yes') reasons.push('Highway-facing site — high throughput expected');
+  if(canniPenaltyPts > 0) reasons.push(`${canniLevel} cannibalization risk (HPCL ${hpclDist.toFixed(1)} km)`);
+  const recoReason = reasons.join('. ') + '.';
+
+  return {
+    lat: cand.lat, lng: cand.lng,
+    district,
+    roadType: cand.roadType || 'unknown',
+    roadLabel, roadQuality,
+    isNH, isSH,
+    score:           Math.round(finalScore*10)/10,
+    opportunityScore:Math.round(opportunityScore*10)/10,
+    canniContribScore: Math.round(canniContrib*10)/10,
+    feasibilityNum:  feasibilityNum,
+    canniPenaltyPts,
+    canniLevel,
+    nearestHPCL:  nearHPCL  ? nearHPCL.name  : '—',
+    hpclDist:     Math.round(hpclDist*10)/10,
+    nearestIOC:   nearIOC   ? nearIOC.name    : '—',
+    nearestBPCL:  nearBPCL  ? nearBPCL.name   : '—',
+    nearestAny:   nearAny   ? nearAny.name    : '—',
+    nearAnyDist:  Math.round(nearAnyDist*10)/10,
+    compCount:    compWithin.length,
+    iocCount:     outletsWithin(cand.lat,cand.lng,ioc,r).length,
+    bpclCount:    outletsWithin(cand.lat,cand.lng,bpcl,r).length,
+    canniScore:   Math.round(canniScore*10)/10,
+    canniPenalty: canniPenaltyPts,
+    captureVol, capturePct,
+    compVol:      Math.round(compVol),
+    hpclVol:      Math.round(hpclVol),
+    totalVol:     Math.round(totalVol),
+    totalVol5km:  Math.round(totalVol5km),
+    hpclSharePct:    Math.round(hpclSharePct*10)/10,
+    mktShareDeficit: Math.round(mktShareDeficit*10)/10,
+    potentialShareGain,
+    feasibilityScore,
+    highwayOpportunity,
+    recoReason,
+    ta: district,
+    source: cand.source || 'road',
+    densityScore: Math.round(densityScore*10)/10,
+    distScore:    Math.round(coverageGapScore*10)/10,
+  };
+}
+
+/* ========================================================
+   RUN ANALYSIS — v6 Road-Based (async, Overpass API)
+   Full pipeline: Road-Only → Hard Exclusions → Settlement →
+   Score → Volume → Spatial Dedup → District Balance → Validate
+======================================================== */
+async function runAnalysis(){
+  if(rawOutlets.length===0){
+    alert('Please upload an Excel/CSV file first.');
+    return;
+  }
+  // ── RESET global state so stale data never bleeds into render functions ──
+  nroSites = [];
+  wsZones  = [];
+  showLoading('Connecting to OpenStreetMap road network...');
+  try{
+    applyFilters();
+    if(filteredOutlets.length===0) filteredOutlets=[...rawOutlets];
+
+    const hpcl=filteredOutlets.filter(o=>o.company==='HPCL');
+    const ioc =filteredOutlets.filter(o=>o.company==='IOC');
+    const bpcl=filteredOutlets.filter(o=>o.company==='BPCL');
+    const oth =filteredOutlets.filter(o=>o.company==='OTHER');
+
+    // Diagnostic rejection counters
+    const diagCounters = {
+      rejForest:0, rejWater:0, rejProtected:0,
+      rejNoSettlement:0, rejRoadType:0, rejCannibalization:0
+    };
+
+    // ── STEP 1: Fetch road candidates (ALLOWED types only via Overpass) ──
+    const rawCandidates = await fetchRoadCandidates(filteredOutlets);
+    const diagStep1 = rawCandidates.length;
+    console.log(`🛣️ Road candidates (allowed types only): ${diagStep1}`);
+
+    // ── STEP 2: HARD EXCLUSION ZONES — forest, water, protected, waterfall ──
+    document.getElementById('loadingMsg').textContent =
+      'Applying hard exclusion zones (forest, water, protected areas)...';
+
+    const afterExclusion = [];
+    rawCandidates.forEach(c => {
+      const ex = isInExclusionZone(c.lat, c.lng);
+      if(!ex.rejected){
+        afterExclusion.push(c);
+      } else {
+        if(ex.type === 'forest')           diagCounters.rejForest++;
+        else if(ex.type === 'water' || ex.type === 'waterfall') diagCounters.rejWater++;
+        else if(ex.type === 'national_park' || ex.type === 'sanctuary') diagCounters.rejProtected++;
+      }
+    });
+    const diagAfterExclusion = afterExclusion.length;
+    console.log(`🚫 After exclusion zones: ${diagAfterExclusion} (removed ${diagStep1 - diagAfterExclusion})`);
+
+    // ── STEP 3: SETTLEMENT CHECK (within 2 km of outlet/settlement) ──
+    document.getElementById('loadingMsg').textContent =
+      'Checking settlement proximity (2 km rule)...';
+    const afterSettlement = afterExclusion.filter(c => {
+      const sf = checkSettlementFeasibility(c.lat, c.lng, filteredOutlets);
+      if(!sf.feasible){ diagCounters.rejNoSettlement++; return false; }
+      return true;
+    });
+    const diagAfterSettlement = afterSettlement.length;
+    console.log(`🏘️ After settlement check: ${diagAfterSettlement}`);
+
+    // ── STEP 4: Score all surviving road candidates ──
+    document.getElementById('loadingMsg').textContent =
+      `Scoring ${afterSettlement.length.toLocaleString()} validated road candidates...`;
+
+    const allScored = [];
+    const BATCH = 500;
+    for(let i=0; i<afterSettlement.length; i+=BATCH){
+      const batch = afterSettlement.slice(i, i+BATCH);
+      batch.forEach(c => allScored.push(scoreCandidate(c, filteredOutlets)));
+      if(i % 2000 === 0){
+        document.getElementById('loadingMsg').textContent =
+          `Scored ${Math.min(i+BATCH, afterSettlement.length).toLocaleString()} / ${afterSettlement.length.toLocaleString()} candidates...`;
+        await new Promise(r=>setTimeout(r,0));
+      }
+    }
+
+    // ── STEP 5: Feasibility gate (progressive relaxation to reach 50+) ──
+    document.getElementById('loadingMsg').textContent = 'Applying feasibility gate...';
+    let feasGate = 70;
+    let highFeasibility = allScored.filter(s => s.feasibilityNum >= feasGate);
+    // Relax feasibility gate progressively to get >= 50 candidates
+    if(highFeasibility.length < 50){ feasGate = 50; highFeasibility = allScored.filter(s => s.feasibilityNum >= feasGate); }
+    if(highFeasibility.length < 50){ feasGate = 30; highFeasibility = allScored.filter(s => s.feasibilityNum >= feasGate); }
+    if(highFeasibility.length < 50){ highFeasibility = allScored; }
+    const diagAfterFeasibility = highFeasibility.length;
+
+    // ── STEP 6: Volume filter (can be relaxed) ──
+    const marketCells = highFeasibility.filter(s => s.totalVol5km >= minMarketVol);
+    const diagAfterVolume = marketCells.length;
+    // Relax volume if needed (never relax road / exclusion / settlement)
+    let filteredCandidates = marketCells.length >= 30 ? marketCells : highFeasibility;
+
+    filteredCandidates.sort((a,b) => b.score - a.score);
+
+    // ── STEP 7: Cannibalization filter (can be relaxed if pool is small) ──
+    let noHighCanni = filteredCandidates.filter(s => s.canniPenaltyPts < 80);
+    if(noHighCanni.length < 50) noHighCanni = filteredCandidates; // relax
+    else filteredCandidates = noHighCanni;
+    // Track cannibalization rejections
+    diagCounters.rejCannibalization = Math.max(0, filteredCandidates.length - noHighCanni.length);
+
+    // ── STEP 8: Spatial deduplication (8km min between top sites) ──
+    document.getElementById('loadingMsg').textContent =
+      'Spatial deduplication — enforcing minimum site spacing...';
+    const spatiallyDeduped = spatialDedup(filteredCandidates, 8);
+    const diagAfterSpatial = spatiallyDeduped.length;
+
+    // ── STEP 9: District-first balancing — fair representation ──
+    document.getElementById('loadingMsg').textContent = 'Balancing across districts...';
+    const districts = [...new Set(spatiallyDeduped.map(s=>s.district).filter(Boolean))];
+    const numDistricts = Math.max(1, districts.length);
+    // Allow enough per district to reach 100 total; minimum 3 per district
+    const maxPerDistrict = Math.max(3, Math.ceil(100 / numDistricts) + 2);
+    const balanced = districtBalance(spatiallyDeduped, 200, maxPerDistrict); // pool up to 200
+    const diagAfterBalance = balanced.length;
+
+    // ── STEP 10: FINAL VALIDATION — every site must pass all 5 checks ──
+    document.getElementById('loadingMsg').textContent = 'Final validation of all candidates...';
+    const finalValidated = [];
+    balanced.forEach(s => {
+      // Re-check: Road ✓ Settlement ✓ Not Forest ✓ Not Water ✓ Not Protected ✓
+      const roadOk       = ALLOWED_ROAD_TYPES.has(s.roadType);
+      const exZone       = isInExclusionZone(s.lat, s.lng);
+      const settlementOk = checkSettlementFeasibility(s.lat, s.lng, filteredOutlets).feasible;
+      const allOk = roadOk && !exZone.rejected && settlementOk;
+      if(allOk) finalValidated.push(s);
+      else {
+        console.warn(`❌ Final validation rejected: (${s.lat.toFixed(4)},${s.lng.toFixed(4)}) road=${roadOk} excl=${exZone.rejected} settle=${settlementOk}`);
+      }
+    });
+
+    // Assign ranks and priorities
+    finalValidated.forEach((s, i) => {
+      s.rank = i + 1;
+      s.priority = i < 10 ? 'A' : i < 25 ? 'B' : i < 50 ? 'C' : 'D';
+    });
+
+    nroSites = finalValidated;
+    wsZones  = finalValidated.filter(s => s.score >= 40).slice(0, 60);
+
+    const diagFinalCount = finalValidated.length;
+    console.log(`✅ Final validated NRO sites: ${diagFinalCount}`);
+
+    // ── Diagnostics ──
+    renderDiagnostics({
+      roadCandidates:   diagStep1,
+      afterExclusion:   diagAfterExclusion,
+      afterSettlement:  diagAfterSettlement,
+      afterFeasibility: diagAfterFeasibility,
+      afterVolume:      diagAfterVolume,
+      afterSpatial:     diagAfterSpatial,
+      afterBalance:     diagAfterBalance,
+      finalCount:       diagFinalCount,
+      rejForest:        diagCounters.rejForest,
+      rejWater:         diagCounters.rejWater,
+      rejProtected:     diagCounters.rejProtected,
+      rejNoSettlement:  diagCounters.rejNoSettlement,
+      rejRoadType:      diagCounters.rejRoadType,
+      rejCannibalization: diagCounters.rejCannibalization
+    });
+
+    // Avg HPCL spacing
+    let spacingSum=0, spacingCount=0;
+    hpcl.forEach((a,i)=>{
+      hpcl.slice(i+1).forEach(b=>{
+        const d=haversine(a.lat,a.lng,b.lat,b.lng);
+        if(d<150){spacingSum+=d;spacingCount++;}
+      });
+    });
+    const avgSpacing = spacingCount>0 ? (spacingSum/spacingCount).toFixed(1) : '—';
+
+    const gaps = filteredCandidates.filter(s=>s.score>=40).length;
+    const highOpp = spatiallyDeduped.filter(s=>s.score>=60).length;
+    const totalCapture = nroSites.slice(0,50).reduce((s,n)=>s+n.captureVol,0);
+
+    setKPI('kpi-hpcl',hpcl.length,'outlets');
+    setKPI('kpi-gaps',gaps,'gap zones');
+    setKPI('kpi-ws',wsZones.length,'zones');
+    setKPI('kpi-nro',highOpp,'sites ≥60');
+    setKPI('kpi-spacing',avgSpacing+' km','');
+    setKPI('kpi-ioc',ioc.length,'outlets');
+    setKPI('kpi-bpcl',bpcl.length,'outlets');
+    setKPI('kpi-other',oth.length,'outlets');
+    setKPI('kpi-total',filteredOutlets.length,'total');
+    setKPI('kpi-capture',(totalCapture/1000).toFixed(1)+'K','KL/month est.');
+
+    renderOMCChart(hpcl.length,ioc.length,bpcl.length,oth.length);
+    renderTAVolChart(filteredOutlets);
+    renderCannibalSummary(nroSites);
+    renderTop5(nroSites);
+    renderNROTable(nroSites);
+    renderDistrictSummary(nroSites);
+    renderDistrictRanking(nroSites, filteredOutlets);
+    renderCanniTable(nroSites);
+    renderWSGrid(nroSites);
+    renderMap_main(filteredOutlets, nroSites);
+
+    document.getElementById('loadingMsg').textContent = 'Analysis complete!';
+    hideLoading();
+  } catch(err){
+    hideLoading();
+    alert('Error during analysis: '+err.message);
+    console.error(err);
+  }
+}
+
+function setKPI(id, val, sub){
+  const el=document.getElementById(id);
+  if(el){el.textContent=val;}
+}
+
+/* ========================================================
+   RENDER: OMC CHART
+======================================================== */
+function renderOMCChart(h,i,b,o){
+  const total=h+i+b+o||1;
+  const bars=[
+    {label:'HPCL',val:h,pct:(h/total*100).toFixed(1),color:'#2563eb'},
+    {label:'IOC',val:i,pct:(i/total*100).toFixed(1),color:'#f97316'},
+    {label:'BPCL',val:b,pct:(b/total*100).toFixed(1),color:'#16a34a'},
+    {label:'Other OMC',val:o,pct:(o/total*100).toFixed(1),color:'#9333ea'},
+  ];
+  document.getElementById('omcChart').innerHTML=`<div class="mini-chart">`+
+    bars.map(r=>`
+    <div class="bar-row">
+      <div class="bar-label">${r.label} (${r.val})</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${r.pct}%;background:${r.color};"></div></div>
+      <div class="bar-val">${r.pct}%</div>
+    </div>`).join('')+`</div>`;
+}
+
+/* ========================================================
+   RENDER: TA VOLUME CHART
+======================================================== */
+function renderTAVolChart(outlets){
+  const hpcl=outlets.filter(o=>o.company==='HPCL');
+  const byTA={};
+  hpcl.forEach(o=>{
+    if(!byTA[o.ta]) byTA[o.ta]=0;
+    byTA[o.ta]+=o.volume;
+  });
+  const sorted=Object.entries(byTA).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const max=sorted[0]?sorted[0][1]:1;
+  if(sorted.length===0){
+    document.getElementById('taVolChart').innerHTML=`<div class="empty"><div class="empty-icon">📦</div><h3>No volume data</h3><p>Add a 'Volume' column to your file.</p></div>`;
+    return;
+  }
+  document.getElementById('taVolChart').innerHTML=`<div class="mini-chart">`+
+    sorted.map(([ta,v])=>`
+    <div class="bar-row">
+      <div class="bar-label">${ta}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(v/max*100).toFixed(1)}%;background:var(--hpcl-blue);"></div></div>
+      <div class="bar-val">${(v/1000).toFixed(0)}K</div>
+    </div>`).join('')+`</div>`;
+}
+
+/* ========================================================
+   RENDER: CANNIBALIZATION SUMMARY
+======================================================== */
+function renderCannibalSummary(sites){
+  if(sites.length===0){
+    const el = document.getElementById('cannibalChart');
+    if(el) el.innerHTML = '<div class="empty" style="padding:20px;text-align:center;color:var(--text-muted)">No data — run analysis first.</div>';
+    return;
+  }
+  const low=sites.filter(s=>s.canniScore<20).length;
+  const med=sites.filter(s=>s.canniScore>=20&&s.canniScore<50).length;
+  const hi =sites.filter(s=>s.canniScore>=50).length;
+  const max=Math.max(low,med,hi,1);
+  document.getElementById('cannibalChart').innerHTML=`<div class="mini-chart">
+    <div class="bar-row"><div class="bar-label" style="color:var(--green)">✅ Low Risk (&lt;20%)</div><div class="bar-track"><div class="bar-fill" style="width:${low/max*100}%;background:var(--green);"></div></div><div class="bar-val">${low} sites</div></div>
+    <div class="bar-row"><div class="bar-label" style="color:var(--amber)">⚠️ Medium (20–50%)</div><div class="bar-track"><div class="bar-fill" style="width:${med/max*100}%;background:var(--amber);"></div></div><div class="bar-val">${med} sites</div></div>
+    <div class="bar-row"><div class="bar-label" style="color:var(--red)">🔴 High Risk (&gt;50%)</div><div class="bar-track"><div class="bar-fill" style="width:${hi/max*100}%;background:var(--red);"></div></div><div class="bar-val">${hi} sites</div></div>
+  </div>`;
+}
+
+/* ========================================================
+   RENDER: TOP 5 TABLE
+======================================================== */
+function renderTop5(sites){
+  if(sites.length===0){
+    document.getElementById('top5Table').innerHTML=
+      '<tr><td colspan="6"><div class="empty" style="padding:20px;text-align:center;color:var(--text-muted)">No sites — run analysis first.</div></td></tr>';
+    return;
+  }
+  const top=sites.slice(0,5);
+  document.getElementById('top5Table').innerHTML=top.map((s,i)=>`
+  <tr>
+    <td><span class="rank-badge ${i===0?'gold':i===1?'silver':i===2?'bronze':''}">${i+1}</span></td>
+    <td>
+      <div style="font-size:12px;font-weight:700;color:var(--hpcl-blue);">${s.district}</div>
+      <div style="font-family:monospace;font-size:10px;color:var(--text-muted);">${s.lat.toFixed(4)}, ${s.lng.toFixed(4)}</div>
+    </td>
+    <td><div class="score-bar-wrap"><div class="score-bar" style="width:${s.score}px;"></div><span class="score-num">${s.score}</span></div></td>
+    <td>${s.iocCount}</td>
+    <td>${s.bpclCount}</td>
+    <td>${scoreBadge(s.score)}</td>
+  </tr>`).join('');
+}
+
+function scoreBadge(s){
+  if(s>=80) return `<span class="badge badge-green">🔥 Prime Site</span>`;
+  if(s>=60) return `<span class="badge badge-blue">✅ High Opp.</span>`;
+  if(s>=40) return `<span class="badge badge-amber">⚠️ Medium</span>`;
+  return `<span class="badge badge-red">🔻 Low</span>`;
+}
+
+function recoBadge(s){
+  if(s>=80) return `<span class="badge badge-green">Immediate NRO</span>`;
+  if(s>=60) return `<span class="badge badge-blue">Shortlist NRO</span>`;
+  if(s>=40) return `<span class="badge badge-amber">Monitor</span>`;
+  return `<span class="badge badge-red">No Action</span>`;
+}
+
+/* ========================================================
+   PRIORITY BADGE
+======================================================== */
+function priorityBadge(p){
+  if(p==='A') return `<span class="badge badge-red" style="font-weight:900;">A</span>`;
+  if(p==='B') return `<span class="badge badge-orange" style="font-weight:900;">B</span>`;
+  if(p==='C') return `<span class="badge badge-amber" style="font-weight:900;">C</span>`;
+  return `<span class="badge badge-blue" style="font-weight:700;">D</span>`;
+}
+
+function feasibilityBadge(f){
+  if(f==='High') return `<span class="badge badge-green">✅ High</span>`;
+  if(f==='Medium') return `<span class="badge badge-amber">⚠️ Medium</span>`;
+  return `<span class="badge badge-red">🔻 Low</span>`;
+}
+
+/* ========================================================
+   RENDER: NRO TABLE
+======================================================== */
+function renderNROTable(sites){
+  const topN = parseInt(document.getElementById('topNSelect')?.value || '50');
+  if(!sites || sites.length===0){
+    document.getElementById('nroTable').innerHTML=
+      `<tr><td colspan="22"><div class="empty" style="padding:40px"><div class="empty-icon">🎯</div><h3>No NRO sites found</h3><p>Adjust the Coverage Radius or Min Market Volume and run analysis again.</p></div></td></tr>`;
+    // Also clear White Space when there are no sites
+    renderWSGrid([]);
+    return;
+  }
+  const displaySites = sites.slice(0, topN);
+  // Keep White Space in sync — same count, same dataset
+  document.getElementById('nroTable').innerHTML=displaySites.map((s,i)=>{
+    const roadBadgeColor = s.isNH ? 'badge-red' : s.isSH ? 'badge-orange' : s.roadScore>=12 ? 'badge-amber' : 'badge-blue';
+    return `
+  <tr style="cursor:pointer" onclick="openDetail(${i})">
+    <td><span class="rank-badge ${i===0?'gold':i===1?'silver':i===2?'bronze':''}">${s.rank||i+1}</span></td>
+    <td style="text-align:center;">${priorityBadge(s.priority||'D')}</td>
+    <td style="font-size:12px;font-weight:700;color:var(--hpcl-blue);white-space:nowrap;">${s.district}</td>
+    <td><span class="badge ${roadBadgeColor}" style="white-space:nowrap;font-size:10px;">${s.roadLabel||'Road'}</span></td>
+    <td style="font-family:monospace;font-size:11.5px;">${s.lat.toFixed(5)}</td>
+    <td style="font-family:monospace;font-size:11.5px;">${s.lng.toFixed(5)}</td>
+    <td>
+      <div class="score-bar-wrap">
+        <div class="score-bar" style="width:${Math.round(s.opportunityScore||s.score)}px;background:linear-gradient(90deg,var(--hpcl-blue),#5b7fe8);"></div>
+        <span class="score-num" style="color:var(--hpcl-blue);">${Math.round(s.opportunityScore||s.score)}</span>
+      </div>
+    </td>
+    <td>
+      <div class="score-bar-wrap">
+        <div class="score-bar" style="width:${s.feasibilityNum||0}px;background:linear-gradient(90deg,var(--green),#2dcc82);"></div>
+        <span class="score-num" style="color:var(--green);">${s.feasibilityNum||0}</span>
+      </div>
+    </td>
+    <td>
+      <span class="badge ${s.canniPenaltyPts>=50?'badge-red':s.canniPenaltyPts>=25?'badge-orange':s.canniPenaltyPts>0?'badge-amber':'badge-green'}"
+        title="${s.canniLevel||'None'} — ${s.canniPenaltyPts||0} pts penalty">
+        ${s.canniPenaltyPts>0?'-':''}${s.canniPenaltyPts||0} (${s.canniLevel||'None'})
+      </span>
+    </td>
+    <td>
+      <div class="score-bar-wrap">
+        <div class="score-bar" style="width:${Math.round(s.score)}px;"></div>
+        <span class="score-num">${s.score}</span>
+      </div>
+    </td>
+    <td>${feasibilityBadge(s.feasibilityScore||'Medium')}</td>
+    <td><span style="font-weight:700;color:${s.hpclSharePct<25?'var(--red)':s.hpclSharePct<50?'var(--amber)':'var(--green)'}">${(s.hpclSharePct||0).toFixed(1)}%</span></td>
+    <td><span style="font-weight:700;color:${(s.mktShareDeficit||0)>60?'var(--red)':(s.mktShareDeficit||0)>40?'var(--amber)':'var(--text-dark)'}">${(s.mktShareDeficit||0).toFixed(1)}%</span></td>
+    <td>${s.captureVol.toLocaleString()} KL<br><span style="font-size:10px;color:var(--text-muted)">(${s.capturePct}% est.)</span></td>
+    <td><span style="font-weight:700;color:var(--hpcl-blue)">${s.potentialShareGain||0}%</span></td>
+    <td style="font-size:11px;">${s.nearestHPCL}</td>
+    <td>${s.hpclDist} km</td>
+    <td style="font-size:11px;">${s.nearestAny||'—'}</td>
+    <td>${s.nearAnyDist||'—'} km</td>
+    <td>${s.compCount} <span style="font-size:10px;color:var(--text-muted)">(IOC:${s.iocCount} BPC:${s.bpclCount})</span></td>
+    <td>${s.highwayOpportunity==='Yes'?'<span class="badge badge-green">✅ Yes</span>':'<span class="badge badge-blue">—</span>'}</td>
+    <td style="font-size:11px;max-width:260px;line-height:1.4;">${s.recoReason||'—'}</td>
+  </tr>`;}).join('');
+  // Keep White Space in sync — same count, same dataset
+  renderWSGrid(sites);
+}
+
+/* ========================================================
+   RENDER: CANNIBALIZATION TABLE
+======================================================== */
+function renderCanniTable(sites){
+  if(sites.length===0){
+    document.getElementById('canniTable').innerHTML=
+      '<tr><td colspan="9"><div class="empty" style="padding:20px;text-align:center;color:var(--text-muted)">No data — run analysis first.</div></td></tr>';
+    return;
+  }
+  document.getElementById('canniTable').innerHTML=sites.map((s,i)=>`
+  <tr>
+    <td>${i+1}</td>
+    <td style="font-family:monospace;font-size:11px;">${s.lat.toFixed(5)}</td>
+    <td style="font-family:monospace;font-size:11px;">${s.lng.toFixed(5)}</td>
+    <td>${s.hpclVol.toLocaleString()} KL</td>
+    <td>${s.totalVol.toLocaleString()} KL</td>
+    <td>
+      <div class="score-bar-wrap">
+        <div class="score-bar" style="width:${Math.min(100,s.canniScore)}px;background:${s.canniScore<20?'var(--green)':s.canniScore<50?'var(--amber)':'var(--red)'};"></div>
+        <span class="score-num" style="color:${s.canniScore<20?'var(--green)':s.canniScore<50?'var(--amber)':'var(--red)'}">${s.canniScore.toFixed(1)}%</span>
+      </div>
+    </td>
+    <td style="font-size:11px;">${s.nearestHPCL}</td>
+    <td>${s.hpclDist} km</td>
+    <td>
+      ${s.canniScore<20
+        ?`<span class="badge badge-green">✅ Low Risk</span>`
+        :s.canniScore<50
+        ?`<span class="badge badge-amber">⚠️ Medium Risk</span>`
+        :`<span class="badge badge-red">🔴 High Risk</span>`}
+    </td>
+  </tr>`).join('');
+}
+
+/* ========================================================
+   RENDER: DISTRICT SUMMARY TABLE
+======================================================== */
+function renderDistrictSummary(sites){
+  const tbody = document.getElementById('districtTable');
+  if(!tbody) return;
+
+  if(!sites || sites.length===0){
+    tbody.innerHTML=`<tr><td colspan="7"><div class="empty"><div class="empty-icon">🗺️</div><h3>No district data</h3><p>Run analysis to view district-wise summary.</p></div></td></tr>`;
+    return;
+  }
+
+  // Aggregate by district
+  const byDistrict = {};
+  sites.forEach(s=>{
+    const d = s.district || 'Unassigned';
+    if(!byDistrict[d]) byDistrict[d] = {sites:0, totalScore:0, topScore:0, totalCapture:0, totalHpclShare:0, totalDeficit:0};
+    byDistrict[d].sites++;
+    byDistrict[d].totalScore += s.score;
+    byDistrict[d].topScore    = Math.max(byDistrict[d].topScore, s.score);
+    byDistrict[d].totalCapture += s.captureVol;
+    byDistrict[d].totalHpclShare += (s.hpclSharePct||0);
+    byDistrict[d].totalDeficit += (s.mktShareDeficit||0);
+  });
+
+  const rows = Object.entries(byDistrict)
+    .sort((a,b)=>b[1].totalCapture - a[1].totalCapture);
+
+  tbody.innerHTML = rows.map(([district, d])=>{
+    const avgScore = (d.totalScore / d.sites).toFixed(1);
+    const avgHpclShare = (d.totalHpclShare / d.sites).toFixed(1);
+    const avgDeficit = (d.totalDeficit / d.sites).toFixed(1);
+    return `
+    <tr>
+      <td><strong style="color:var(--hpcl-blue);">${district}</strong></td>
+      <td style="text-align:center;">
+        <span class="rank-badge" style="width:auto;min-width:28px;padding:0 10px;border-radius:12px;background:var(--hpcl-blue);">${d.sites}</span>
+      </td>
+      <td>
+        <div class="score-bar-wrap">
+          <div class="score-bar" style="width:${Math.round(avgScore)}px;"></div>
+          <span class="score-num">${avgScore}</span>
+        </div>
+      </td>
+      <td><span style="font-weight:700;color:${avgHpclShare<25?'var(--red)':avgHpclShare<50?'var(--amber)':'var(--green)'}">${avgHpclShare}%</span></td>
+      <td><span style="font-weight:700;color:${avgDeficit>60?'var(--red)':avgDeficit>40?'var(--amber)':'var(--text-dark)'}">${avgDeficit}%</span></td>
+      <td><strong>${d.totalCapture.toLocaleString()}</strong> <span style="font-size:10px;color:var(--text-muted)">KL/mo</span></td>
+      <td>${scoreBadge(d.topScore)}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ========================================================
+   RENDER: WHITE-SPACE GRID
+   White Space is ONLY a card-view of the SAME dataset as
+   Top NRO table. Count is driven by topNSelect — no
+   independent filtering, ranking, or separate dropdown.
+======================================================== */
+function renderWSGrid(zones){
+  // ALWAYS use nroSites — identical to Top NRO table
+  // But if zones is explicitly an empty array, it means the pipeline produced 0 results;
+  // in that case honour the empty signal and do NOT fall back to the stale nroSites global.
+  const source = (zones && zones.length > 0) ? zones
+               : (zones === null || zones === undefined) ? (nroSites || [])
+               : []; // zones was explicitly [] → show empty state
+  if(!source || source.length===0){
+    document.getElementById('wsGrid').innerHTML=`<div class="empty" style="padding:60px"><div class="empty-icon">⬜</div><h3>No white-space zones detected</h3><p>Ensure your data has competitors within the selected radius.</p></div>`;
+    return;
+  }
+
+  // Use EXACT same topNSelect value as Top NRO table
+  const topN = parseInt(document.getElementById('topNSelect')?.value || '50');
+  const displaySites = source.slice(0, topN);
+
+  // Update the count label in panel header
+  const labelEl = document.getElementById('wsCountLabel');
+  if(labelEl){
+    const selEl = document.getElementById('topNSelect');
+    const labelText = selEl ? selEl.options[selEl.selectedIndex]?.text : `Top ${topN}`;
+    labelEl.textContent = `${labelText} — same as Top NRO Sites tab (${displaySites.length} sites)`;
+  }
+
+  const tier = s => s>=70?'high':s>=40?'medium':'low';
+  const el = document.createElement('div');
+  el.className='ws-grid';
+  el.innerHTML=displaySites.map((z)=>{
+    // Map back to nroSites index so flyTo/openDetail works correctly
+    const nroIdx = nroSites.indexOf(z);
+    const safeIdx = nroIdx >= 0 ? nroIdx : 0;
+    return `
+  <div class="ws-card ${tier(z.score)}" onclick="flyTo(${z.lat},${z.lng},${safeIdx})">
+    <div class="wc-lat" style="font-size:12px;font-weight:700;color:var(--hpcl-blue);margin-bottom:2px;">🗺️ ${z.district}</div>
+    <div class="wc-lat">📍 ${z.lat.toFixed(4)}, ${z.lng.toFixed(4)}</div>
+    <div class="wc-score">${z.score}<span>/100</span></div>
+    <div class="wc-meta">
+      IOC nearby: <strong>${z.iocCount}</strong> &nbsp;|&nbsp; BPCL: <strong>${z.bpclCount}</strong><br>
+      Nearest HPCL: <strong>${z.hpclDist} km</strong><br>
+      Cannibalization: <strong>${z.canniScore.toFixed(1)}%</strong><br>
+      Capture Est.: <strong>${z.captureVol.toLocaleString()} KL/mo</strong>
+    </div>
+    <div class="wc-action">${z.score>=70?'🔥 Prime NRO Target':z.score>=40?'📌 Potential Site':'🔍 Monitor'}</div>
+  </div>`;
+  }).join('');
+  document.getElementById('wsGrid').innerHTML='';
+  document.getElementById('wsGrid').appendChild(el);
+}
+
+function flyTo(lat,lng,idx){
+  showSection('map');
+  // Map is now tab index 3 (Overview=0, TopNRO=1, WhiteSpace=2, Map=3)
+  const tabs = document.querySelectorAll('.nav-tab');
+  tabs.forEach((t,i)=>t.classList.toggle('active', i===3));
+  setTimeout(()=>{
+    map.invalidateSize();
+    map.flyTo([lat,lng],14,{duration:1.2});
+    openDetail(idx);
+  },150);
+}
+
+/* ========================================================
+   RENDER: MAP
+======================================================== */
+/* makeIcon kept as legacy alias for NRO markers (stars) */
+function makeIcon(color, size=10, star=false){
+  return makeCircleIcon(color, size, star);
+}
+
+function buildOutletPopup(o){
+  /* Professional analytics popup for outlet markers */
+  const companyColor = {HPCL:'#2563eb',IOC:'#f97316',BPCL:'#16a34a',OTHER:'#9333ea'}[o.company]||'#555';
+  const companyBg   = {HPCL:'#eff6ff',IOC:'#fff7ed',BPCL:'#f0fdf4',OTHER:'#faf5ff'}[o.company]||'#f9f9f9';
+
+  return `
+  <div style="min-width:260px;max-width:300px;font-family:'Segoe UI',sans-serif;border-radius:10px;overflow:hidden;">
+    <!-- Header -->
+    <div style="background:${companyBg};border-bottom:3px solid ${companyColor};padding:12px 14px 10px;">
+      <div style="font-weight:900;font-size:15px;color:${companyColor};line-height:1.3;margin-bottom:4px;">${o.name}</div>
+      <span style="
+        display:inline-block;
+        background:${companyColor};color:#fff;
+        font-size:10px;font-weight:800;letter-spacing:.5px;
+        padding:2px 10px;border-radius:20px;text-transform:uppercase;
+      ">${o.company}</span>
+    </div>
+    <!-- Metrics -->
+    <div style="padding:10px 14px;background:#fff;">
+      <!-- Trading Area / Sales Area -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+        <div style="background:#f8faff;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:9px;font-weight:700;color:#6b7686;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Trading Area</div>
+          <div style="font-size:12px;font-weight:800;color:#1b2430;">${o.ta||'—'}</div>
+        </div>
+        <div style="background:#f8faff;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:9px;font-weight:700;color:#6b7686;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Sales Area</div>
+          <div style="font-size:12px;font-weight:800;color:#1b2430;">${o.sa||'—'}</div>
+        </div>
+      </div>
+      <!-- Volume -->
+      <div style="background:linear-gradient(135deg,#003DA5 0%,#1a56c4 100%);border-radius:8px;padding:10px 12px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;letter-spacing:.5px;">Monthly Volume</span>
+        <span style="font-size:17px;font-weight:900;color:#fff;">${o.volume.toLocaleString()} <span style="font-size:11px;font-weight:500;">KL</span></span>
+      </div>
+      <!-- Coordinates -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="background:#f8faff;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:9px;font-weight:700;color:#6b7686;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Latitude</div>
+          <div style="font-size:12px;font-weight:700;color:#1b2430;font-family:monospace;">${o.lat.toFixed(5)}</div>
+        </div>
+        <div style="background:#f8faff;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:9px;font-weight:700;color:#6b7686;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Longitude</div>
+          <div style="font-size:12px;font-weight:700;color:#1b2430;font-family:monospace;">${o.lng.toFixed(5)}</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderMap_main(outlets, nro){
+  // Clear layers
+  for(let k in layerGroups) layerGroups[k].clearLayers();
+  // Clear marker registry to avoid memory leaks / stale refs
+  outletMarkerRegistry.length = 0;
+
+  const colors={HPCL:'#2563eb',IOC:'#f97316',BPCL:'#16a34a',OTHER:'#9333ea'};
+  const logoMap ={HPCL:LOGO_HPCL, IOC:LOGO_IOC, BPCL:LOGO_BPCL};
+  const groups  ={HPCL:'hpcl',IOC:'ioc',BPCL:'bpcl',OTHER:'other'};
+
+  const currentZoom = map ? map.getZoom() : 6;
+  const useLogos    = currentZoom >= 10;
+
+  outlets.forEach(o=>{
+    if(!o.lat||!o.lng) return;
+    const key   = groups[o.company]||'other';
+    const col   = colors[o.company]||'#9333ea';
+    const sz    = o.company==='HPCL' ? 8 : 7;
+    const logSz = 36;
+
+    // Build both icon variants up front
+    const circleIcon = makeCircleIcon(col, sz);
+    const logoUri    = logoMap[o.company];
+    const logoIcon   = logoUri ? makeLogoIcon(logoUri, logSz) : circleIcon;
+
+    const m = L.marker([o.lat, o.lng], {icon: useLogos ? logoIcon : circleIcon});
+    m.bindPopup(buildOutletPopup(o), {maxWidth:310});
+
+    layerGroups[key].addLayer(m);
+
+    // Register for zoom-based swapping (only companies with logos)
+    outletMarkerRegistry.push({marker:m, company:o.company, circleIcon, logoIcon});
+
+    // Coverage circle for HPCL
+    if(o.company==='HPCL'){
+      const circle=L.circle([o.lat,o.lng],{
+        radius:coverageRadius*1000,
+        color:'#2563eb',weight:1,
+        fillColor:'#2563eb',fillOpacity:0.04,
+        dashArray:'6 4'
+      });
+      layerGroups.coverage.addLayer(circle);
+    }
+  });
+
+  // NRO markers
+  nro.forEach((s,i)=>{
+    const m=L.marker([s.lat,s.lng],{icon:makeIcon('#ef4444',10,true)});
+    m.bindPopup(`
+      <div style="min-width:260px;max-width:300px;font-family:Segoe UI,sans-serif">
+        <div style="font-weight:900;font-size:14px;color:#003DA5;margin-bottom:4px;">🎯 NRO Candidate #${s.rank||i+1}</div>
+        <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;">
+          <span style="background:${s.priority==='A'?'#fdeaea':s.priority==='B'?'#fff1e6':s.priority==='C'?'#fef7e8':'#e8eeff'};color:${s.priority==='A'?'#e23b3b':s.priority==='B'?'#f97316':s.priority==='C'?'#b8730a':'#003DA5'};font-weight:900;padding:2px 10px;border-radius:12px;font-size:11px;">Priority ${s.priority||'—'}</span>
+          <span style="font-size:12px;font-weight:700;color:#003DA5;background:#e8eeff;padding:2px 8px;border-radius:5px;">🗺️ ${s.district}</span>
+        </div>
+        <table style="width:100%;font-size:11.5px;border-collapse:collapse;">
+          <tr><td style="color:#888;padding:2px 0;"><b>📍 Coordinates</b></td><td style="font-family:monospace;">${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}</td></tr>
+          <tr><td style="color:#888;padding:2px 0;"><b>🛣️ Road Type</b></td><td style="font-weight:700;color:${s.isNH?'#e23b3b':s.isSH?'#f97316':'#003DA5'}">${s.roadLabel||'—'} (Quality: ${s.roadQuality||0}/100)</td></tr>
+          <tr><td style="color:#888;padding:2px 0;"><b>📊 Opportunity</b></td><td style="font-weight:800;color:#003DA5">${s.opportunityScore||s.score}/100</td></tr>
+          <tr><td style="color:#888;padding:2px 0;"><b>✅ Feasibility</b></td><td style="font-weight:800;color:${s.feasibilityNum>=70?'#1e9e5a':s.feasibilityNum>=45?'#f39c12':'#e23b3b'}">${s.feasibilityNum||0}/100 (${s.feasibilityScore})</td></tr>
+          <tr><td style="color:#888;padding:2px 0;"><b>⚡ Cannibalization</b></td><td style="color:${s.canniPenaltyPts>=50?'#e23b3b':s.canniPenaltyPts>=25?'#f97316':s.canniPenaltyPts>0?'#f39c12':'#1e9e5a'}">${s.canniLevel||'None'} (${s.canniPenaltyPts||0} pts)</td></tr>
+          <tr><td style="color:#888;padding:2px 0;"><b>🏆 Final Score</b></td><td style="font-weight:900;color:${s.score>=70?'#1e9e5a':s.score>=50?'#f39c12':'#e23b3b'};font-size:13px">${s.score}/100</td></tr>
+          <tr style="border-top:1px solid #eee"><td colspan="2" style="padding-top:4px;"></td></tr>
+          <tr><td style="color:#888;padding:2px 0;">Nearest HPCL</td><td>${s.nearestHPCL} (${s.hpclDist} km)</td></tr>
+          <tr><td style="color:#888;padding:2px 0;">Nearest IOC</td><td>${s.nearestIOC||'—'}</td></tr>
+          <tr><td style="color:#888;padding:2px 0;">Nearest BPCL</td><td>${s.nearestBPCL||'—'}</td></tr>
+          <tr><td style="color:#888;padding:2px 0;">Nearest Outlet</td><td>${s.nearestAny||'—'} (${s.nearAnyDist||'—'} km)</td></tr>
+          <tr><td style="color:#888;padding:2px 0;">Competitors Nearby</td><td>${s.compCount} (IOC:${s.iocCount} BPCL:${s.bpclCount})</td></tr>
+          <tr><td style="color:#888;padding:2px 0;">HPCL Market Share</td><td style="color:${(s.hpclSharePct||0)<25?'#e23b3b':'#1e9e5a'}">${(s.hpclSharePct||0).toFixed(1)}%</td></tr>
+          <tr><td style="color:#888;padding:2px 0;">Market Deficit</td><td>${(s.mktShareDeficit||0).toFixed(1)}%</td></tr>
+          <tr><td style="color:#888;padding:2px 0;">Est. Capture</td><td><b>${s.captureVol.toLocaleString()} KL/mo</b></td></tr>
+          <tr><td style="color:#888;padding:2px 0;">Highway Opp.</td><td>${s.highwayOpportunity==='Yes'?'✅ Yes':'—'}</td></tr>
+        </table>
+        <div style="margin-top:6px;padding:5px 8px;border-radius:6px;background:#f0f4fc;font-size:11px;line-height:1.5;color:#1b2430;border-left:3px solid #003DA5;">
+          <strong>Why selected:</strong> ${s.recoReason||'—'}
+        </div>
+        <div style="margin-top:6px;padding:5px 8px;border-radius:6px;background:${s.score>=70?'#e8f7ef':s.score>=50?'#fef7e8':'#fdeaea'};font-size:11px;font-weight:700;color:${s.score>=70?'#1e9e5a':s.score>=50?'#b8730a':'#e23b3b'}">
+          ${s.score>=70?'✅ Immediate NRO Target':s.score>=50?'📌 Shortlist for Field Verification':'🔍 Monitor'}
+        </div>
+      </div>
+    `, {maxWidth:320});
+    m.on('click',()=>openDetail(i));
+    layerGroups.nro.addLayer(m);
+  });
+
+  // Heatmap (simple circles)
+  nro.forEach(s=>{
+    const col = s.score>=70?'rgba(239,68,68,':s.score>=50?'rgba(251,146,60,':'rgba(234,179,8,';
+    const opacity = s.score/200;
+    const c=L.circle([s.lat,s.lng],{
+      radius:coverageRadius*800,
+      fillColor:s.score>=70?'#ef4444':s.score>=50?'#f97316':'#eab308',
+      fillOpacity:opacity,
+      color:'transparent',
+      stroke:false
+    });
+    layerGroups.heat.addLayer(c);
+  });
+
+  // Apply visibility
+  for(let k in layerGroups){
+    if(!layerVisible[k]) map.removeLayer(layerGroups[k]);
+    else layerGroups[k].addTo(map);
+  }
+
+  // Fit
+  const pts=outlets.filter(o=>o.lat&&o.lng).map(o=>[o.lat,o.lng]);
+  if(pts.length) try{map.fitBounds(pts,{padding:[30,30]});}catch(e){}
+}
+
+/* ========================================================
+   MAP CONTROLS
+======================================================== */
+function toggleLayer(key, btn){
+  layerVisible[key]=!layerVisible[key];
+  if(layerVisible[key]) layerGroups[key].addTo(map);
+  else map.removeLayer(layerGroups[key]);
+  btn.classList.toggle('active');
+}
+
+function fitAllMarkers(){
+  const pts=filteredOutlets.filter(o=>o.lat&&o.lng).map(o=>[o.lat,o.lng]);
+  if(pts.length) try{map.fitBounds(pts,{padding:[30,30]});}catch(e){}
+}
+function fitHpclMarkers(){
+  const pts=filteredOutlets.filter(o=>o.company==='HPCL'&&o.lat&&o.lng).map(o=>[o.lat,o.lng]);
+  if(pts.length) try{map.fitBounds(pts,{padding:[30,30]});}catch(e){}
+}
+function fitNroMarkers(){
+  const pts=nroSites.map(s=>[s.lat,s.lng]);
+  if(pts.length) try{map.fitBounds(pts,{padding:[40,40]});}catch(e){}
+}
+
+/* ========================================================
+   DETAIL PANEL
+======================================================== */
+function openDetail(i){
+  const s=nroSites[i];
+  if(!s) return;
+  currentDetailIndex = i;
+  document.getElementById('dp-title').textContent=`NRO Candidate #${s.rank||i+1} — Priority ${s.priority||'—'}`;
+  document.getElementById('dp-coord').textContent=`${s.district} · ${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}`;
+  document.getElementById('dp-score-num').textContent=Math.round(s.score);
+
+  // ring
+  const offset=238.8-(238.8*s.score/100);
+  document.getElementById('dp-ring').style.strokeDashoffset=offset;
+  document.getElementById('dp-ring').style.stroke=
+    s.score>=70?'var(--green)':s.score>=50?'var(--amber)':'var(--red)';
+
+  const metrics=[
+    ['Priority', s.priority||'—'],
+    ['District', s.district || '—'],
+    ['Road Type', s.roadLabel||'—'],
+    ['Road Quality Score', `${s.roadQuality||0}/100 (NH=100 SH=85 MDR=70 DR=55)`],
+    ['Opportunity Score', `${s.opportunityScore||s.score}/100`],
+    ['Feasibility Score', `${s.feasibilityNum||0}/100 (${s.feasibilityScore||'—'})`],
+    ['Cannibalization', `${s.canniPenaltyPts||0} pts (${s.canniLevel||'None'})`],
+    ['Final Score', `${s.score}/100`],
+    ['HPCL Share %', `${(s.hpclSharePct||0).toFixed(1)}%`],
+    ['Market Share Deficit %', `${(s.mktShareDeficit||0).toFixed(1)}%`],
+    ['Nearest HPCL Outlet', s.nearestHPCL],
+    ['Distance from HPCL', `${s.hpclDist} km`],
+    ['Nearest Outlet', `${s.nearestAny||'—'} (${s.nearAnyDist||'—'} km)`],
+    ['Nearest IOC', s.nearestIOC||'—'],
+    ['Nearest BPCL', s.nearestBPCL||'—'],
+    ['Competitors Nearby', `${s.compCount} outlets`],
+    ['IOC Nearby', `${s.iocCount}`],
+    ['BPCL Nearby', `${s.bpclCount}`],
+    ['Highway Opportunity', s.highwayOpportunity||'No'],
+    ['Competitor Volume', `${(s.compVol||0).toLocaleString()} KL`],
+    ['Expected Capture', `${s.captureVol.toLocaleString()} KL/mo (~${s.capturePct}%)`],
+    ['Potential Share Gain', `${s.potentialShareGain||0}%`],
+    ['Recommendation', s.score>=70?'✅ Immediate NRO Target':s.score>=50?'📌 Shortlist for Field Verification':'🔍 Monitor'],
+  ];
+  document.getElementById('dp-metrics').innerHTML=metrics.map(([l,v])=>`
+    <div class="dp-metric"><span class="dm-label">${l}</span><span class="dm-val">${v}</span></div>
+  `).join('') + `
+  <div style="margin-top:12px;padding:10px;background:#f0f4fc;border-radius:8px;border-left:3px solid var(--hpcl-blue);">
+    <div style="font-size:10px;font-weight:800;color:var(--hpcl-blue);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Recommendation Reason</div>
+    <div style="font-size:12px;line-height:1.6;color:var(--text-dark);">${s.recoReason||'—'}</div>
+  </div>`;
+
+  document.getElementById('detailPanel').classList.add('open');
+}
+
+function closeDetail(){
+  document.getElementById('detailPanel').classList.remove('open');
+}
+
+function openDetailInMap(){
+  const i = currentDetailIndex;
+  const s = nroSites[i];
+  if(!s) return;
+  // Switch to map tab (reuse same nav pattern as flyTo used by White Space cards)
+  document.querySelectorAll('.page-section').forEach(sec=>sec.classList.remove('active'));
+  document.getElementById('sec-map').classList.add('active');
+  // Map is now tab index 3 (Overview=0, TopNRO=1, WhiteSpace=2, Map=3)
+  document.querySelectorAll('.nav-tab').forEach((t,idx)=>{
+    t.classList.toggle('active', idx===3);
+  });
+  closeDetail();
+  setTimeout(()=>{
+    map.invalidateSize();
+    map.flyTo([s.lat, s.lng], 15, {duration:1.2});
+    // Find and open the NRO marker popup, then briefly highlight it
+    let targetMarker = null;
+    layerGroups.nro.eachLayer(layer=>{
+      const ll = layer.getLatLng();
+      if(Math.abs(ll.lat - s.lat) < 0.00001 && Math.abs(ll.lng - s.lng) < 0.00001){
+        targetMarker = layer;
+      }
+    });
+    if(targetMarker){
+      setTimeout(()=>{
+        targetMarker.openPopup();
+        // Brief highlight pulse on the marker icon element
+        const el = targetMarker.getElement();
+        if(el){
+          const inner = el.querySelector('div');
+          if(inner){
+            const orig = inner.style.boxShadow;
+            inner.style.boxShadow = '0 0 0 6px rgba(255,107,0,0.7), 0 0 0 12px rgba(255,107,0,0.3)';
+            inner.style.transition = 'box-shadow 0.3s';
+            setTimeout(()=>{ inner.style.boxShadow = orig; }, 1800);
+          }
+        }
+      }, 1300);
+    }
+  }, 150);
+}
+
+/* ========================================================
+   EXPORT CSV
+======================================================== */
+function exportCSV(){
+  if(nroSites.length===0){alert('No NRO sites to export.');return;}
+  const topN = parseInt(document.getElementById('topNSelect')?.value || '50');
+  const exportSites = nroSites.slice(0, topN);
+  const headers=['Rank','Priority','District','Road_Type','Road_Quality_Score','Latitude','Longitude','OpportunityScore','FeasibilityScore','Cannibalization_pts','CannibalizationLevel','FinalScore','HPCL_Share_%','MarketShareDeficit_%','ExpectedCapture_KL','PotentialShareGain_%','NearestHPCL','HPCL_Distance_km','NearestAnyOutlet','Dist_NearestOutlet_km','CompetitorCount','HighwayOpportunity','Validation_Pass','RecommendationReason'];
+  const rows=exportSites.map((s,i)=>[
+    s.rank||i+1, s.priority||'—', s.district, s.roadLabel||'—',
+    s.roadQuality||0,
+    s.lat.toFixed(5), s.lng.toFixed(5),
+    s.opportunityScore||s.score, s.feasibilityNum||0,
+    s.canniPenaltyPts||0, s.canniLevel||'None', s.score,
+    (s.hpclSharePct||0).toFixed(1), (s.mktShareDeficit||0).toFixed(1),
+    s.captureVol, s.potentialShareGain||0,
+    `"${s.nearestHPCL}"`, s.hpclDist,
+    `"${s.nearestAny||'—'}"`, s.nearAnyDist||'—',
+    s.compCount, s.highwayOpportunity||'No',
+    'Road✓ Settlement✓ NotForest✓ NotWater✓ NotProtected✓',
+    `"${(s.recoReason||'').replace(/"/g,"'")}"`
+  ]);
+  const csv=[headers,...rows].map(r=>r.join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='HPCL_NRO_Recommendations_v6.csv';
+  a.click();URL.revokeObjectURL(url);
+}
+
+/* ========================================================
+   LOADING
+======================================================== */
+function showLoading(msg){
+  document.getElementById('loadingMsg').textContent=msg||'Processing...';
+  document.getElementById('loadingOverlay').classList.add('show');
+}
+function hideLoading(){
+  setTimeout(()=>document.getElementById('loadingOverlay').classList.remove('show'),400);
+}
+
+/* ========================================================
+   RENDER: DIAGNOSTICS PANEL
+======================================================== */
+function renderDiagnostics(d){
+  const panel = document.getElementById('diagnosticsPanel');
+  if(!panel) return;
+  panel.style.display = '';
+  const steps = [
+    {label:'Road Candidates (Allowed Types)',  val:d.roadCandidates,    color:'#003DA5'},
+    {label:'After Exclusion Zones',            val:d.afterExclusion,    color:'#1a56c4'},
+    {label:'After Settlement Check (2 km)',    val:d.afterSettlement,   color:'#7B61FF'},
+    {label:'After Feasibility Gate',           val:d.afterFeasibility,  color:'#f39c12'},
+    {label:'After Volume Filter',              val:d.afterVolume,       color:'#9333ea'},
+    {label:'After Spatial Dedup (8 km)',       val:d.afterSpatial,      color:'#FF6B00'},
+    {label:'After District Balancing',         val:d.afterBalance,      color:'#1e9e5a'},
+    {label:'Final Validated Recommendations',  val:d.finalCount,        color:'#e23b3b'},
+  ];
+
+  const rejections = [
+    {label:'❌ Rejected: Forest',           val:d.rejForest,           color:'#6b7f4a'},
+    {label:'❌ Rejected: Water Body',       val:d.rejWater,            color:'#2563eb'},
+    {label:'❌ Rejected: Protected Area',   val:d.rejProtected,        color:'#7B61FF'},
+    {label:'❌ Rejected: No Settlement',    val:d.rejNoSettlement,     color:'#f39c12'},
+    {label:'❌ Rejected: Road Type',        val:d.rejRoadType,         color:'#e23b3b'},
+    {label:'❌ Rejected: Cannibalization',  val:d.rejCannibalization,  color:'#FF6B00'},
+  ];
+
+  document.getElementById('diagGrid').innerHTML =
+    `<div style="grid-column:1/-1;font-size:11px;font-weight:800;color:var(--hpcl-blue);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Pipeline Funnel</div>` +
+    steps.map(s=>`
+      <div style="background:#f8faff;border:1.5px solid #dde5f5;border-radius:10px;padding:12px 10px;text-align:center;">
+        <div style="font-size:10px;font-weight:700;color:#6b7686;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;line-height:1.3;">${s.label}</div>
+        <div style="font-size:22px;font-weight:900;color:${s.color};">${(s.val||0).toLocaleString()}</div>
+      </div>
+    `).join('') +
+    `<div style="grid-column:1/-1;font-size:11px;font-weight:800;color:var(--red);text-transform:uppercase;letter-spacing:.5px;margin:10px 0 4px;">Rejection Breakdown</div>` +
+    `<div style="grid-column:1/-1;display:grid;grid-template-columns:repeat(6,1fr);gap:8px;">` +
+    rejections.map(r=>`
+      <div style="background:#fff5f5;border:1.5px solid #f5c6c6;border-radius:10px;padding:10px 8px;text-align:center;">
+        <div style="font-size:10px;font-weight:700;color:#6b7686;text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px;line-height:1.3;">${r.label}</div>
+        <div style="font-size:20px;font-weight:900;color:${r.color};">${(r.val||0).toLocaleString()}</div>
+      </div>
+    `).join('') + `</div>`;
+}
+
+/* ========================================================
+   RENDER: DISTRICT OPPORTUNITY RANKING TABLE
+======================================================== */
+function renderDistrictRanking(sites, allOutlets){
+  const tbody = document.getElementById('districtRankingTable');
+  if(!tbody) return;
+
+  if(!sites || sites.length===0){
+    tbody.innerHTML=`<tr><td colspan="8"><div class="empty"><div class="empty-icon">🏆</div><h3>No data</h3><p>Run analysis first.</p></div></td></tr>`;
+    return;
+  }
+
+  // Build district map from all outlets
+  const distOutlets = {};
+  allOutlets.forEach(o=>{
+    const d = o.district || 'Unassigned';
+    if(!distOutlets[d]) distOutlets[d] = {hpclVol:0, compVol:0, totalVol:0, totalOutlets:0, hpclOutlets:0};
+    distOutlets[d].totalVol += o.volume;
+    distOutlets[d].totalOutlets++;
+    if(o.company==='HPCL'){
+      distOutlets[d].hpclVol += o.volume;
+      distOutlets[d].hpclOutlets++;
+    } else {
+      distOutlets[d].compVol += o.volume;
+    }
+  });
+
+  // Aggregate sites by district
+  const byDistrict = {};
+  sites.forEach(s=>{
+    const d = s.district || 'Unassigned';
+    if(!byDistrict[d]) byDistrict[d] = {sites:0, totalScore:0, topScore:0, totalCapture:0, totalHpclShare:0, totalDeficit:0};
+    byDistrict[d].sites++;
+    byDistrict[d].totalScore += s.opportunityScore||s.score;
+    byDistrict[d].topScore   = Math.max(byDistrict[d].topScore, s.opportunityScore||s.score);
+    byDistrict[d].totalCapture += s.captureVol;
+    byDistrict[d].totalHpclShare += (s.hpclSharePct||0);
+    byDistrict[d].totalDeficit += (s.mktShareDeficit||0);
+  });
+
+  // Compute opportunity index per district
+  const rows = Object.entries(byDistrict).map(([district, d])=>{
+    const outlets = distOutlets[district] || {hpclVol:0,compVol:0,totalVol:0};
+    const hpclSharePct = outlets.totalVol>0 ? (outlets.hpclVol/outlets.totalVol*100) : 0;
+    const compSharePct = outlets.totalVol>0 ? (outlets.compVol/outlets.totalVol*100) : 0;
+    const avgScore = d.totalScore / d.sites;
+    // Opportunity Index: weight avg score + competitor dominance + number of recommended sites
+    const oppIndex = Math.round(avgScore * 0.6 + compSharePct * 0.4);
+    return {district, oppIndex, hpclSharePct, compSharePct, marketVol:outlets.totalVol, nroCount:d.sites, capturePotential:d.totalCapture};
+  }).sort((a,b)=>b.oppIndex - a.oppIndex);
+
+  tbody.innerHTML = rows.map((row, i) => {
+    return `
+    <tr>
+      <td><span class="rank-badge ${i===0?'gold':i===1?'silver':i===2?'bronze':''}">${i+1}</span></td>
+      <td><strong style="color:var(--hpcl-blue);">${row.district}</strong></td>
+      <td>
+        <div class="score-bar-wrap">
+          <div class="score-bar" style="width:${Math.min(100,row.oppIndex)}px;background:linear-gradient(90deg,var(--hpcl-orange),#e55d00);"></div>
+          <span class="score-num" style="color:var(--hpcl-orange);">${row.oppIndex}</span>
+        </div>
+      </td>
+      <td><span style="font-weight:700;color:${row.hpclSharePct<25?'var(--red)':row.hpclSharePct<50?'var(--amber)':'var(--green)'}">${row.hpclSharePct.toFixed(1)}%</span></td>
+      <td><span style="font-weight:700;color:${row.compSharePct>60?'var(--red)':row.compSharePct>40?'var(--amber)':'var(--text-dark)'}">${row.compSharePct.toFixed(1)}%</span></td>
+      <td>${row.marketVol.toLocaleString()} KL</td>
+      <td style="text-align:center;"><span class="rank-badge" style="width:auto;min-width:28px;padding:0 10px;border-radius:12px;background:var(--hpcl-orange);">${row.nroCount}</span></td>
+      <td><strong>${row.capturePotential.toLocaleString()}</strong> <span style="font-size:10px;color:var(--text-muted)">KL/mo</span></td>
+    </tr>`;
+  }).join('');
+}
+
+
+</script>
+</body>
+</html>
